@@ -565,7 +565,7 @@ export default function App() {
           setDecisions(migrated);
           // Save migrated IDs back so it only migrates once
           const changed = JSON.stringify(migrated) !== JSON.stringify(rawDecisions);
-          if (changed) await localStorage.setItem(SK.decisions, JSON.stringify(migrated)) => {});
+          if (changed) await localStorage.setItem(SK.decisions, JSON.stringify(migrated);
         }
 
         const posData = await Promise.resolve({ value: localStorage.getItem(SK.positions) });
@@ -577,43 +577,43 @@ export default function App() {
   // ── Save helpers ──
   const saveStrategies = useCallback(async (s) => {
     setStrategies(s);
-    await localStorage.setItem(SK.strategies, JSON.stringify(s)) => {});
+    await localStorage.setItem(SK.strategies, JSON.stringify(s);
   }, []);
 
   const saveSymbolStrategy = useCallback(async (s) => {
     setSymbolStrategy(s);
-    await localStorage.setItem(SK.symbolStrategy, JSON.stringify(s)) => {});
+    await localStorage.setItem(SK.symbolStrategy, JSON.stringify(s);
   }, []);
 
   const savePosOverride = useCallback(async (s) => {
     setPosOverride(s);
-    await localStorage.setItem(SK.positionOverride, JSON.stringify(s)) => {});
+    await localStorage.setItem(SK.positionOverride, JSON.stringify(s);
   }, []);
 
   const saveDecision = useCallback(async (posId, decision) => {
     const updated = { ...decisions, [posId]: decision };
     setDecisions(updated);
-    await localStorage.setItem(SK.decisions, JSON.stringify(updated)) => {});
+    await localStorage.setItem(SK.decisions, JSON.stringify(updated);
   }, [decisions]);
 
   const saveSymbolRatings = useCallback(async (r) => {
     setSymbolRatings(r);
-    await localStorage.setItem(SK.symbolRatings, JSON.stringify(r)) => {});
+    await localStorage.setItem(SK.symbolRatings, JSON.stringify(r);
   }, []);
 
   const saveAccountNicknames = useCallback(async (map) => {
     setAccountNicknames(map);
-    await localStorage.setItem(SK.accountNicknames, JSON.stringify(map)) => {});
+    await localStorage.setItem(SK.accountNicknames, JSON.stringify(map);
   }, []);
 
   const saveAlerts = useCallback(async (a) => {
     setAlerts(a);
-    await localStorage.setItem(SK.alerts, JSON.stringify(a)) => {});
+    await localStorage.setItem(SK.alerts, JSON.stringify(a);
   }, []);
 
   const saveAlertRules = useCallback(async (r) => {
     setAlertRules(r);
-    await localStorage.setItem(SK.alertRules, JSON.stringify(r)) => {});
+    await localStorage.setItem(SK.alertRules, JSON.stringify(r);
   }, []);
 
   const dismissAlert = useCallback(async (id) => {
@@ -669,10 +669,10 @@ export default function App() {
         groupStrategies = result.groupStrategies;
         // Save equity holdings and total equity
         setEquityHoldings(result.equityHoldings || []);
-        await localStorage.setItem(SK.equityHoldings, JSON.stringify(result.equityHoldings || [])) => {});
+        await localStorage.setItem(SK.equityHoldings, JSON.stringify(result.equityHoldings || []);
         if (result.totalEquity != null) {
           setTotalEquity(result.totalEquity);
-          await localStorage.setItem(SK.totalEquity, JSON.stringify(result.totalEquity)) => {});
+          await localStorage.setItem(SK.totalEquity, JSON.stringify(result.totalEquity);
         }
       } else {
         const result = parseSchwabCSV(text);
@@ -713,13 +713,13 @@ export default function App() {
 
       // Replace positions completely — no merging, fresh file is source of truth
       setPositions(parsed);
-      await localStorage.setItem(SK.positions, JSON.stringify(parsed)) => {});
+      await localStorage.setItem(SK.positions, JSON.stringify(parsed);
 
       // Always wipe stored prices completely before saving fresh ones
-      await localStorage.setItem(SK.prices, JSON.stringify({})) => {});
+      await localStorage.setItem(SK.prices, JSON.stringify({});
       const newPrices = { ...equityPrices };
       setLivePrice(newPrices);
-      await localStorage.setItem(SK.prices, JSON.stringify(newPrices)) => {});
+      await localStorage.setItem(SK.prices, JSON.stringify(newPrices);
 
       // Fetch missing industry data
       const uniqueSymbols = [...new Set(parsed.map(p => p.symbol))];
@@ -740,7 +740,7 @@ export default function App() {
           await new Promise(r => setTimeout(r, 200));
         }
         setIndustry(newIndustry);
-        await localStorage.setItem(SK.industries, JSON.stringify(newIndustry)) => {});
+        await localStorage.setItem(SK.industries, JSON.stringify(newIndustry);
       }
 
       const priceCount = Object.keys(equityPrices).length;
@@ -767,16 +767,16 @@ export default function App() {
     setAlerts([]);
     setAlertRules([]);
     await Promise.all([
-      localStorage.setItem(SK.positions, JSON.stringify([])) => {}),
-      localStorage.setItem(SK.prices, JSON.stringify({})) => {}),
-      localStorage.setItem(SK.industries, JSON.stringify({})) => {}),
-      localStorage.setItem(SK.symbolStrategy, JSON.stringify({})) => {}),
-      localStorage.setItem(SK.positionOverride, JSON.stringify({})) => {}),
-      localStorage.setItem(SK.decisions, JSON.stringify({})) => {}),
-      localStorage.setItem(SK.accountNicknames, JSON.stringify({})) => {}),
-      localStorage.setItem(SK.strategies, JSON.stringify(DEFAULT_STRATEGIES)) => {}),
-      localStorage.setItem(SK.alerts, JSON.stringify([])) => {}),
-      localStorage.setItem(SK.alertRules, JSON.stringify([])) => {}),
+      localStorage.setItem(SK.positions, JSON.stringify([]);,
+      localStorage.setItem(SK.prices, JSON.stringify({});,
+      localStorage.setItem(SK.industries, JSON.stringify({});,
+      localStorage.setItem(SK.symbolStrategy, JSON.stringify({});,
+      localStorage.setItem(SK.positionOverride, JSON.stringify({});,
+      localStorage.setItem(SK.decisions, JSON.stringify({});,
+      localStorage.setItem(SK.accountNicknames, JSON.stringify({});,
+      localStorage.setItem(SK.strategies, JSON.stringify(DEFAULT_STRATEGIES);,
+      localStorage.setItem(SK.alerts, JSON.stringify([]);,
+      localStorage.setItem(SK.alertRules, JSON.stringify([]);,
     ]);
     notify("Everything cleared including decisions, strategies and nicknames.", "success");
   }, []);
@@ -807,7 +807,7 @@ export default function App() {
       const text = await file.text();
       const data = JSON.parse(text);
       for (const [key, value] of Object.entries(data)) {
-        await localStorage.setItem(key, value) => {});
+        await localStorage.setItem(key, value);
       }
       notify("✓ Data restored! Refreshing...", "success");
       setTimeout(() => window.location.reload(), 1500);
@@ -873,7 +873,7 @@ export default function App() {
       }
 
       setWatchlistData(data);
-      await localStorage.setItem(SK.watchlistData, JSON.stringify(data)) => {});
+      await localStorage.setItem(SK.watchlistData, JSON.stringify(data);
       notify(`✓ Watchlist loaded — ${Object.keys(data).length} symbols.`, "success");
     } catch(e) {
       notify("Error reading watchlist: " + e.message, "error");
@@ -888,9 +888,9 @@ export default function App() {
     setLivePrice({});
     setIndustry({});
     await Promise.all([
-      localStorage.setItem(SK.positions, JSON.stringify([])) => {}),
-      localStorage.setItem(SK.prices, JSON.stringify({})) => {}),
-      localStorage.setItem(SK.industries, JSON.stringify({})) => {}),
+      localStorage.setItem(SK.positions, JSON.stringify([]);,
+      localStorage.setItem(SK.prices, JSON.stringify({});,
+      localStorage.setItem(SK.industries, JSON.stringify({});,
     ]);
     notify("Positions cleared. Decisions, strategies and nicknames kept.", "success");
   }, []);
@@ -1160,16 +1160,16 @@ export default function App() {
   const handleBackup = async () => {
     const ts = new Date().toISOString();
     setLastBackup(ts);
-    await localStorage.setItem(SK.lastBackup, JSON.stringify(ts))=>{});
+    await localStorage.setItem(SK.lastBackup, JSON.stringify(ts);
     notify("✓ Backup recorded!", "success");
   };
 
   const handleSchwabTokens = async (tokens) => {
     setSchwabTokens(tokens);
     if (tokens) {
-      await localStorage.setItem(SK.schwabTokens, JSON.stringify(tokens))=>{});
+      await localStorage.setItem(SK.schwabTokens, JSON.stringify(tokens);
     } else {
-      localStorage.removeItem(SK.schwabTokens)=>{});
+      localStorage.removeItem(SK.schwabTokens);
     }
   };
 
@@ -3870,7 +3870,7 @@ function StrategiesTab({ strategies, positions, symbolStrategy, posOverride, get
 
   const saveIndustryOverrides = async (map) => {
     setIndustryOverrides(map);
-    await localStorage.setItem("opts:industryOverrides", JSON.stringify(map)) => {});
+    await localStorage.setItem("opts:industryOverrides", JSON.stringify(map);
   };
 
   const STRAT_DESCRIPTIONS = {
