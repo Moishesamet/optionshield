@@ -507,19 +507,19 @@ export default function App() {
     (async () => {
       try {
         const [sp, ss, po, ind, dec, an, pr, eh, al, ar, te, sr, wd] = await Promise.all([
-          Promise.resolve({ value: localStorage.getItem(SK.strategies)),
-          Promise.resolve({ value: localStorage.getItem(SK.symbolStrategy)),
-          Promise.resolve({ value: localStorage.getItem(SK.positionOverride)),
-          Promise.resolve({ value: localStorage.getItem(SK.industries)),
-          Promise.resolve({ value: localStorage.getItem(SK.decisions)),
-          Promise.resolve({ value: localStorage.getItem(SK.accountNicknames)),
-          Promise.resolve({ value: localStorage.getItem(SK.prices)),
-          Promise.resolve({ value: localStorage.getItem(SK.equityHoldings)),
-          Promise.resolve({ value: localStorage.getItem(SK.alerts)),
-          Promise.resolve({ value: localStorage.getItem(SK.alertRules)),
-          Promise.resolve({ value: localStorage.getItem(SK.totalEquity)),
-          Promise.resolve({ value: localStorage.getItem(SK.symbolRatings)),
-          Promise.resolve({ value: localStorage.getItem(SK.watchlistData)),
+          Promise.resolve({ value: localStorage.getItem(SK.strategies) }),
+          Promise.resolve({ value: localStorage.getItem(SK.symbolStrategy) }),
+          Promise.resolve({ value: localStorage.getItem(SK.positionOverride) }),
+          Promise.resolve({ value: localStorage.getItem(SK.industries) }),
+          Promise.resolve({ value: localStorage.getItem(SK.decisions) }),
+          Promise.resolve({ value: localStorage.getItem(SK.accountNicknames) }),
+          Promise.resolve({ value: localStorage.getItem(SK.prices) }),
+          Promise.resolve({ value: localStorage.getItem(SK.equityHoldings) }),
+          Promise.resolve({ value: localStorage.getItem(SK.alerts) }),
+          Promise.resolve({ value: localStorage.getItem(SK.alertRules) }),
+          Promise.resolve({ value: localStorage.getItem(SK.totalEquity) }),
+          Promise.resolve({ value: localStorage.getItem(SK.symbolRatings) }),
+          Promise.resolve({ value: localStorage.getItem(SK.watchlistData) }),
         ]);
         try { if (sp) setStrategies(JSON.parse(sp.value)); } catch(e) { console.warn('strategies load error', e); }
         try { if (ss) setSymbolStrategy(JSON.parse(ss.value)); } catch(e) { console.warn('symbolStrategy load error', e); }
@@ -534,15 +534,15 @@ export default function App() {
         try { if (sr) setSymbolRatings(JSON.parse(sr.value)); } catch(e) { console.warn('symbolRatings load error', e); }
         try { if (wd) setWatchlistData(JSON.parse(wd.value)); } catch(e) { console.warn('watchlistData load error', e); }
         try {
-          const io = { value: localStorage.getItem("opts:industryOverrides");
+          const io = { value: localStorage.getItem("opts:industryOverrides") };
           if (io) setIndustryOverrides(JSON.parse(io.value));
         } catch(e) {}
         try {
-          const lb = { value: localStorage.getItem(SK.lastBackup);
+          const lb = { value: localStorage.getItem(SK.lastBackup) };
           if (lb) setLastBackup(JSON.parse(lb.value));
         } catch(e) {}
         try {
-          const st = { value: localStorage.getItem(SK.schwabTokens);
+          const st = { value: localStorage.getItem(SK.schwabTokens) };
           if (st) setSchwabTokens(JSON.parse(st.value));
         } catch(e) {}
 
@@ -568,7 +568,7 @@ export default function App() {
           if (changed) localStorage.setItem(SK.decisions, JSON.stringify(migrated));
         }
 
-        const posData = { value: localStorage.getItem(SK.positions);
+        const posData = { value: localStorage.getItem(SK.positions) };
         if (posData) setPositions(JSON.parse(posData.value));
       } catch (e) { console.log("Storage load error", e); }
     })();
@@ -786,7 +786,7 @@ export default function App() {
     const data = {};
     for (const key of keys) {
       try {
-        const r = { value: localStorage.getItem(key) };
+        const r = { value: localStorage.getItem(key) } };
         if (r) data[key] = r.value;
       } catch(e) {}
     }
