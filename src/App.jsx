@@ -507,43 +507,43 @@ export default function App() {
     (async () => {
       try {
         const [sp, ss, po, ind, dec, an, pr, eh, al, ar, te, sr, wd] = await Promise.all([
-          Promise.resolve({ value: localStorage.getItem(SK.strategies) }),
-          Promise.resolve({ value: localStorage.getItem(SK.symbolStrategy) }),
-          Promise.resolve({ value: localStorage.getItem(SK.positionOverride) }),
-          Promise.resolve({ value: localStorage.getItem(SK.industries) }),
-          Promise.resolve({ value: localStorage.getItem(SK.decisions) }),
-          Promise.resolve({ value: localStorage.getItem(SK.accountNicknames) }),
-          Promise.resolve({ value: localStorage.getItem(SK.prices) }),
-          Promise.resolve({ value: localStorage.getItem(SK.equityHoldings) }),
-          Promise.resolve({ value: localStorage.getItem(SK.alerts) }),
-          Promise.resolve({ value: localStorage.getItem(SK.alertRules) }),
-          Promise.resolve({ value: localStorage.getItem(SK.totalEquity) }),
-          Promise.resolve({ value: localStorage.getItem(SK.symbolRatings) }),
-          Promise.resolve({ value: localStorage.getItem(SK.watchlistData) }),
+          Promise.resolve({ value: localStorage.getItem(SK.strategies)),
+          Promise.resolve({ value: localStorage.getItem(SK.symbolStrategy)),
+          Promise.resolve({ value: localStorage.getItem(SK.positionOverride)),
+          Promise.resolve({ value: localStorage.getItem(SK.industries)),
+          Promise.resolve({ value: localStorage.getItem(SK.decisions)),
+          Promise.resolve({ value: localStorage.getItem(SK.accountNicknames)),
+          Promise.resolve({ value: localStorage.getItem(SK.prices)),
+          Promise.resolve({ value: localStorage.getItem(SK.equityHoldings)),
+          Promise.resolve({ value: localStorage.getItem(SK.alerts)),
+          Promise.resolve({ value: localStorage.getItem(SK.alertRules)),
+          Promise.resolve({ value: localStorage.getItem(SK.totalEquity)),
+          Promise.resolve({ value: localStorage.getItem(SK.symbolRatings)),
+          Promise.resolve({ value: localStorage.getItem(SK.watchlistData)),
         ]);
-        try { if (sp && sp.value) setStrategies(JSON.parse(sp.value)); } catch(e) {}
-        try { if (ss && ss.value) setSymbolStrategy(JSON.parse(ss.value)); } catch(e) {}
-        try { if (po && po.value) setPosOverride(JSON.parse(po.value)); } catch(e) {}
-        try { if (ind && ind.value) setIndustry(JSON.parse(ind.value)); } catch(e) {}
-        try { if (an && an.value) setAccountNicknames(JSON.parse(an.value)); } catch(e) {}
-        try { if (pr && pr.value) setLivePrice(JSON.parse(pr.value)); } catch(e) {}
-        try { if (eh && eh.value) setEquityHoldings(JSON.parse(eh.value)); } catch(e) {}
-        try { if (al && al.value) setAlerts(JSON.parse(al.value)); } catch(e) {}
-        try { if (ar && ar.value) setAlertRules(JSON.parse(ar.value)); } catch(e) {}
-        try { if (te && te.value) setTotalEquity(JSON.parse(te.value)); } catch(e) {}
-        try { if (sr && sr.value) setSymbolRatings(JSON.parse(sr.value)); } catch(e) {}
-        try { if (wd && wd.value) setWatchlistData(JSON.parse(wd.value)); } catch(e) {}
+        try { if (sp) setStrategies(JSON.parse(sp.value)); } catch(e) { console.warn('strategies load error', e); }
+        try { if (ss) setSymbolStrategy(JSON.parse(ss.value)); } catch(e) { console.warn('symbolStrategy load error', e); }
+        try { if (po) setPosOverride(JSON.parse(po.value)); } catch(e) { console.warn('posOverride load error', e); }
+        try { if (ind) setIndustry(JSON.parse(ind.value)); } catch(e) { console.warn('industry load error', e); }
+        try { if (an) setAccountNicknames(JSON.parse(an.value)); } catch(e) { console.warn('accountNicknames load error', e); }
+        try { if (pr) setLivePrice(JSON.parse(pr.value)); } catch(e) { console.warn('prices load error', e); }
+        try { if (eh) setEquityHoldings(JSON.parse(eh.value)); } catch(e) { console.warn('equityHoldings load error', e); }
+        try { if (al) setAlerts(JSON.parse(al.value)); } catch(e) { console.warn('alerts load error', e); }
+        try { if (ar) setAlertRules(JSON.parse(ar.value)); } catch(e) { console.warn('alertRules load error', e); }
+        try { if (te) setTotalEquity(JSON.parse(te.value)); } catch(e) { console.warn('totalEquity load error', e); }
+        try { if (sr) setSymbolRatings(JSON.parse(sr.value)); } catch(e) { console.warn('symbolRatings load error', e); }
+        try { if (wd) setWatchlistData(JSON.parse(wd.value)); } catch(e) { console.warn('watchlistData load error', e); }
         try {
-          const io = { value: localStorage.getItem("opts:industryOverrides") };
-          if (io && io.value) setIndustryOverrides(JSON.parse(io.value));
+          const io = { value: localStorage.getItem("opts:industryOverrides");
+          if (io) setIndustryOverrides(JSON.parse(io.value));
         } catch(e) {}
         try {
-          const lb = { value: localStorage.getItem(SK.lastBackup) };
-          if (lb && lb.value) setLastBackup(JSON.parse(lb.value));
+          const lb = { value: localStorage.getItem(SK.lastBackup);
+          if (lb) setLastBackup(JSON.parse(lb.value));
         } catch(e) {}
         try {
-          const st = { value: localStorage.getItem(SK.schwabTokens) };
-          if (st && st.value) setSchwabTokens(JSON.parse(st.value));
+          const st = { value: localStorage.getItem(SK.schwabTokens);
+          if (st) setSchwabTokens(JSON.parse(st.value));
         } catch(e) {}
 
         // Load and migrate decisions — strip old group prefix from IDs
@@ -568,8 +568,8 @@ export default function App() {
           if (changed) localStorage.setItem(SK.decisions, JSON.stringify(migrated));
         }
 
-        const posData = { value: localStorage.getItem(SK.positions) };
-        if (posData && posData.value) setPositions(JSON.parse(posData.value));
+        const posData = { value: localStorage.getItem(SK.positions);
+        if (posData) setPositions(JSON.parse(posData.value));
       } catch (e) { console.log("Storage load error", e); }
     })();
   }, []);
@@ -1222,7 +1222,7 @@ export default function App() {
         {tab === "backtester" && <BacktesterTab />}
         {tab === "builder" && <StrategyBuilderTab positions={positions} livePrice={livePrice} strategies={strategies} getStrategy={getStrategy} />}
         {tab === "strategies" && <StrategiesTab strategies={strategies} positions={positions} symbolStrategy={symbolStrategy} posOverride={posOverride} getStrategy={getStrategy} saveStrategies={saveStrategies} saveSymbolStrategy={saveSymbolStrategy} savePosOverride={savePosOverride} symbolRatings={symbolRatings} saveSymbolRatings={saveSymbolRatings} equityHoldings={equityHoldings} watchlistData={watchlistData} accountNicknames={accountNicknames} saveAccountNicknames={saveAccountNicknames} positions2={positions} />}
-        {tab === "import" && <ImportTab onUpload={(f, src) => handleCSV(f, src)} onClear={handleClearAll} onClearPositions={handleClearPositions} onExport={handleExport} onRestore={handleRestore} onWatchlist={handleWatchlistUpload} watchlistCount={Object.keys(watchlistData).length} posCount={positions.length} lastBackup={lastBackup} onBackup={handleBackup} schwabTokens={schwabTokens} onSchwabTokens={handleSchwabTokens} />}
+        {tab === "import" && <ImportTab onUpload={(f, src) => handleCSV(f, src)} onClear={handleClearAll} onClearPositions={handleClearPositions} onExport={handleExport} onRestore={handleRestore} onWatchlist={handleWatchlistUpload} watchlistCount={Object.keys(watchlistData).length} posCount={positions.length} lastBackup={lastBackup} onBackup={handleBackup} schwabTokens={schwabTokens} onSchwabTokens={handleSchwabTokens} onSchwabImport={async (imported) => { setPositions(imported); localStorage.setItem(SK.positions, JSON.stringify(imported)); notify("✓ " + imported.length + " positions imported from Schwab!", "success"); }} />}
       </main>
     </div>
   );
@@ -3864,7 +3864,7 @@ function StrategiesTab({ strategies, positions, symbolStrategy, posOverride, get
 
   useEffect(() => {
     Promise.resolve({ value: localStorage.getItem("opts:industryOverrides") }).then(r => {
-      if (r && r.value) setIndustryOverrides(JSON.parse(r.value));
+      if (r) setIndustryOverrides(JSON.parse(r.value));
     }).catch(() => {});
   }, []);
 
@@ -4863,7 +4863,7 @@ function SettingsRules({ alertRules, saveAlertRules }) {
     </div>
   );
 }
-function ImportTab({ onUpload, onClear, onClearPositions, onExport, onRestore, onWatchlist, watchlistCount, posCount, lastBackup, onBackup, schwabTokens, onSchwabTokens }) {
+function ImportTab({ onUpload, onClear, onClearPositions, onExport, onRestore, onWatchlist, watchlistCount, posCount, lastBackup, onBackup, schwabTokens, onSchwabTokens, onSchwabImport }) {
 
   const [schwabCallbackUrl, setSchwabCallbackUrl] = useState("");
   const [schwabStatus, setSchwabStatus] = useState("");
@@ -4888,7 +4888,47 @@ function ImportTab({ onUpload, onClear, onClearPositions, onExport, onRestore, o
       if (!accResp.ok) throw new Error("Account fetch failed: " + accResp.status);
       const accounts = await accResp.json();
       if (!accounts.length) throw new Error("No accounts found.");
+
+      const MONTHS = { JAN:0,FEB:1,MAR:2,APR:3,MAY:4,JUN:5,JUL:6,AUG:7,SEP:8,OCT:9,NOV:10,DEC:11 };
+
+      const parseOptionSymbol = (desc, symbol) => {
+        // Schwab description format: "AAPL 01/17/2025 150.00 C" or "SPY Jan 17 2025 500 Put"
+        // Also handle: "100 (Weeklys) 22 MAY 26 22 CALL"
+        if (!desc) return null;
+
+        // Try format: "DD MON YY strike TYPE"
+        let m = desc.match(/(\d{1,2})\s+(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\s+(\d{2,4})\s+([\d.]+)\s+(CALL|PUT)/i);
+        if (m) {
+          const day = parseInt(m[1]);
+          const mon = MONTHS[m[2].toUpperCase()];
+          let yr = parseInt(m[3]);
+          if (yr < 100) yr += 2000;
+          const strike = parseFloat(m[4]);
+          const type = m[5].toUpperCase();
+          const expStr = String(day).padStart(2,'0') + ' ' + m[2].toUpperCase() + ' ' + yr;
+          return { exp: expStr, strike, type };
+        }
+
+        // Try format: "MM/DD/YYYY strike C/P"
+        m = desc.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})\s+([\d.]+)\s+([CP])/i);
+        if (m) {
+          const mon = parseInt(m[1]) - 1;
+          const day = parseInt(m[2]);
+          const yr = parseInt(m[3]);
+          const strike = parseFloat(m[4]);
+          const type = m[5].toUpperCase() === 'C' ? 'CALL' : 'PUT';
+          const monNames = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+          const expStr = String(day).padStart(2,'0') + ' ' + monNames[mon] + ' ' + yr;
+          return { exp: expStr, strike, type };
+        }
+
+        return null;
+      };
+
       let allPositions = [];
+      let accMap = {};
+      accounts.forEach(a => { accMap[a.hashValue] = a.accountNumber; });
+
       await Promise.all(accounts.map(async (acc) => {
         const posResp = await fetch("https://api.schwabapi.com/trader/v1/accounts/" + acc.hashValue + "?fields=positions", {
           headers: { "Authorization": "Bearer " + schwabTokens.accessToken }
@@ -4896,20 +4936,62 @@ function ImportTab({ onUpload, onClear, onClearPositions, onExport, onRestore, o
         if (!posResp.ok) return;
         const posData = await posResp.json();
         const positions = (posData && posData.securitiesAccount && posData.securitiesAccount.positions) || [];
+
         positions.forEach(p => {
-          if (p.instrument && p.instrument.assetType === "OPTION") {
-            allPositions.push({
-              account: acc.accountNumber,
-              symbol: p.instrument.underlyingSymbol,
-              description: p.instrument.description,
-              qty: p.longQuantity > 0 ? p.longQuantity : -p.shortQuantity,
-              marketValue: p.marketValue,
-              averagePrice: p.averagePrice,
-            });
+          const inst = p.instrument;
+          if (!inst || inst.assetType !== "OPTION") return;
+
+          const desc = inst.description || "";
+          const underlyingSymbol = inst.underlyingSymbol || inst.symbol || "";
+          const parsed = parseOptionSymbol(desc, underlyingSymbol);
+          if (!parsed) return;
+
+          const longQty = parseFloat(p.longQuantity) || 0;
+          const shortQty = parseFloat(p.shortQuantity) || 0;
+          const qty = longQty > 0 ? longQty : -shortQty;
+          if (qty === 0) return;
+
+          const avgPrice = parseFloat(p.averagePrice) || 0;
+          const markPrice = parseFloat(p.marketValue) / (Math.abs(qty) * 100) || 0;
+
+          const isCall = parsed.type === 'CALL';
+          const isShort = qty < 0;
+
+          const id = underlyingSymbol + '_' + parsed.strike + '_' + parsed.exp + '_' + parsed.type + '_' + acc.accountNumber;
+
+          // Calculate P/L %
+          let plPct = null;
+          if (avgPrice > 0 && markPrice >= 0) {
+            if (isShort) {
+              plPct = ((avgPrice - markPrice) / avgPrice) * 100;
+            } else {
+              plPct = ((markPrice - avgPrice) / avgPrice) * 100;
+            }
           }
+
+          allPositions.push({
+            id,
+            symbol: underlyingSymbol,
+            exp: parsed.exp,
+            strike: parsed.strike,
+            qty,
+            tradePrice: avgPrice,
+            mark: markPrice,
+            plPct,
+            account: acc.accountNumber,
+            isShortPut: isShort && !isCall,
+            isLongPut: !isShort && !isCall,
+            isShortCall: isShort && isCall,
+            isLongCall: !isShort && isCall,
+          });
         });
       }));
-      setSchwabStatus("✓ Found " + allPositions.length + " option positions across " + accounts.length + " account(s). Schwab live data confirmed working!");
+
+      if (allPositions.length === 0) throw new Error("No option positions found. Try uploading your TOS file instead.");
+
+      // Save positions
+      await onSchwabImport(allPositions);
+      setSchwabStatus("✓ Imported " + allPositions.length + " positions from " + accounts.length + " account(s)!");
     } catch(e) { setSchwabStatus("⚠ " + e.message); }
     setSchwabLoading(false);
   };
@@ -5084,7 +5166,7 @@ function ImportTab({ onUpload, onClear, onClearPositions, onExport, onRestore, o
           <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
             <div style={{ fontSize: 11, color: "#888" }}>Expires {new Date(schwabTokens.expiresAt).toLocaleTimeString()}</div>
             <button style={{ ...S.saveBtn, fontSize: 12 }} onClick={handlePullPositions}>
-              {schwabLoading ? "Fetching..." : "Pull Positions"}
+              {schwabLoading ? "Importing..." : "📥 Import Positions from Schwab"}
             </button>
             <button style={{ ...S.filterBtn, fontSize: 11 }} onClick={() => onSchwabTokens(null)}>Disconnect</button>
           </div>
