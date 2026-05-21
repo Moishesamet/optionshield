@@ -786,7 +786,7 @@ export default function App() {
     const data = {};
     for (const key of keys) {
       try {
-        const r = { value: localStorage.getItem(key) } };
+        const r = { value: localStorage.getItem(key) };
         if (r) data[key] = r.value;
       } catch(e) {}
     }
