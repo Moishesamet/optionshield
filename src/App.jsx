@@ -2487,11 +2487,16 @@ function PnLTab({ positions = [], livePrice = {}, strategies = [], getStrategy, 
         setLoadMsg("Fetching transactions for account " + (++count) + " of " + accounts.length + "...");
         try {
           const txResp = await fetch(
-            "https://api.schwabapi.com/trader/v1/accounts/" + acc.hashValue + "/transactions?startDate=" + fromDate + "T00:00:00.000Z&endDate=" + toDate + "T23:59:59.999Z&types=TRADE,DIVIDEND,INTEREST,OTHER",
+            "https://api.schwabapi.com/trader/v1/accounts/" + acc.hashValue + "/transactions?startDate=" + fromDate + "&endDate=" + toDate + "&types=TRADE",
             { headers: { "Authorization": "Bearer " + schwabTokens.accessToken } }
           );
-          if (!txResp.ok) continue;
+          if (!txResp.ok) {
+            const errText = await txResp.text();
+            console.warn("TX fetch failed for account", acc.accountNumber, txResp.status, errText);
+            continue;
+          }
           const txData = await txResp.json();
+          console.log("TX data for account", acc.accountNumber, ":", JSON.stringify(txData).slice(0, 200));
           const txList = Array.isArray(txData) ? txData : [];
 
           txList.forEach(tx => {
