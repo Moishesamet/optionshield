@@ -2445,10 +2445,10 @@ function PnLTab({ positions = [], livePrice = {}, strategies = [], getStrategy, 
     const isLongCall = tx.qty > 0 && tx.putCall === "CALL";
 
     // Check OptionShield assignment first
-    const pos = positions.find(p => p.symbol === sym);
+    const pos = (positions || []).find(p => p.symbol === sym);
     if (pos) {
-      const strat = strategies.find(s => s.id === getStrategy(pos));
-      if (strat) return strat.name;
+      const strat = (strategies || []).find(s => s.id === getStrategy(pos));
+      if (strat && strat.name) return strat.name;
     }
 
     // Manual override
@@ -2571,13 +2571,14 @@ function PnLTab({ positions = [], livePrice = {}, strategies = [], getStrategy, 
   }), [transactions, filterAccount, filterStrategy, filterType, manualOverrides]);
 
   // Unrealized P&L from open positions
-  const unrealizedRows = useMemo(() => positions.map(p => {
-    const price = livePrice[p.symbol];
+  const unrealizedRows = useMemo(() => (positions || []).map(p => {
+    const price = (livePrice || {})[p.symbol];
     if (!price) return null;
     const markVal = price * Math.abs(p.qty) * 100;
     const costBasis = (p.tradePrice || 0) * Math.abs(p.qty) * 100;
     const pnl = p.qty < 0 ? costBasis - markVal : markVal - costBasis;
-    const stratName = strategies.find(s => s.id === getStrategy(p))?.name || "Unallocated";
+    const strat = (strategies || []).find(s => s.id === getStrategy(p));
+    const stratName = (strat && strat.name) || "Unallocated";
     return {
       id: p.id,
       date: p.exp || "",
@@ -2762,7 +2763,7 @@ function PnLTab({ positions = [], livePrice = {}, strategies = [], getStrategy, 
                           g.rows.forEach(r => { newOverrides[r.id] = e.target.value; });
                           setManualOverrides(newOverrides);
                         }} style={{ ...S.sortSelect, fontSize: 10, padding: "2px 6px" }}>
-                          {strategyNames.filter(s => s !== "All").map(s => <option key={s} value={s}>{s}</option>)}
+                          {(strategyNames || []).filter(s => s !== "All").map(s => <option key={s} value={s}>{s}</option>)}
                         </select>
                       </td>
                     </tr>
