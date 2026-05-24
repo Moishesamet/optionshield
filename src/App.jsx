@@ -491,7 +491,11 @@ export default function App() {
   const [watchlistData, setWatchlistData] = useState({});
   const [industryOverrides, setIndustryOverrides] = useState({});
   const [lastBackup, setLastBackup] = useState(null);
-  const [schwabTokens, setSchwabTokens] = useState(null); // symbol → { industry, subIndustry, marketCap, beta, high52, low52, divYield, implVol } // symbol → "A"|"B"|"C"|"D"
+  const [schwabTokens, setSchwabTokens] = useState({
+    accessToken: "I0.b2F1dGgyLmNkYy5zY2h3YWIuY29t.-ohq5gaW89qO4GGzaN0Mqj4LgHyvqPadJPDRjJekjWc@",
+    refreshToken: "cMDNgvNPt3ArVJ0kmfE7hCOAYKJU9PsaQ-k6zqH1X9TO_ZvDWDeN4joenbrHhVAKU3XyTtXCd3UvmGMh-OACyi2Z9HO1Vm0Ck-fsa3_NJJz4Dglv242vPP7tb1muFe5efzieZEtMkOs@",
+    expiresAt: 1779658156590
+  }); // symbol → { industry, subIndustry, marketCap, beta, high52, low52, divYield, implVol } // symbol → "A"|"B"|"C"|"D"
   const [alerts, setAlerts] = useState([]);       // [ { id, posId, symbol, message, severity, timestamp, dismissed } ]
   const [alertRules, setAlertRules] = useState([]); // rules config - to be built out later // code → friendly name              // posId → "ATE" | "BuyBack" | null
   const [livePrice, setLivePrice] = useState({});
@@ -534,15 +538,15 @@ export default function App() {
         try { if (sr) setSymbolRatings(JSON.parse(sr.value)); } catch(e) { console.warn('symbolRatings load error', e); }
         try { if (wd) setWatchlistData(JSON.parse(wd.value)); } catch(e) { console.warn('watchlistData load error', e); }
         try {
-          const io = { value: localStorage.getItem("opts:industryOverrides");
+          const io = { value: localStorage.getItem("opts:industryOverrides") };
           if (io) setIndustryOverrides(JSON.parse(io.value));
         } catch(e) {}
         try {
-          const lb = { value: localStorage.getItem(SK.lastBackup);
+          const lb = { value: localStorage.getItem(SK.lastBackup) };
           if (lb) setLastBackup(JSON.parse(lb.value));
         } catch(e) {}
         try {
-          const st = { value: localStorage.getItem(SK.schwabTokens);
+          const st = { value: localStorage.getItem(SK.schwabTokens) };
           if (st) setSchwabTokens(JSON.parse(st.value));
         } catch(e) {}
 
@@ -568,7 +572,7 @@ export default function App() {
           if (changed) localStorage.setItem(SK.decisions, JSON.stringify(migrated));
         }
 
-        const posData = { value: localStorage.getItem(SK.positions);
+        const posData = { value: localStorage.getItem(SK.positions) };
         if (posData) setPositions(JSON.parse(posData.value));
       } catch (e) { console.log("Storage load error", e); }
     })();
@@ -767,16 +771,16 @@ export default function App() {
     setAlerts([]);
     setAlertRules([]);
     await Promise.all([
-      localStorage.setItem(SK.positions, JSON.stringify([])),
-      localStorage.setItem(SK.prices, JSON.stringify({})),
-      localStorage.setItem(SK.industries, JSON.stringify({})),
-      localStorage.setItem(SK.symbolStrategy, JSON.stringify({})),
-      localStorage.setItem(SK.positionOverride, JSON.stringify({})),
-      localStorage.setItem(SK.decisions, JSON.stringify({})),
-      localStorage.setItem(SK.accountNicknames, JSON.stringify({})),
-      localStorage.setItem(SK.strategies, JSON.stringify(DEFAULT_STRATEGIES)),
-      localStorage.setItem(SK.alerts, JSON.stringify([])),
-      localStorage.setItem(SK.alertRules, JSON.stringify([])),
+      Promise.resolve(localStorage.setItem(SK.positions, JSON.stringify([]))),
+      Promise.resolve(localStorage.setItem(SK.prices, JSON.stringify({}))),
+      Promise.resolve(localStorage.setItem(SK.industries, JSON.stringify({}))),
+      Promise.resolve(localStorage.setItem(SK.symbolStrategy, JSON.stringify({}))),
+      Promise.resolve(localStorage.setItem(SK.positionOverride, JSON.stringify({}))),
+      Promise.resolve(localStorage.setItem(SK.decisions, JSON.stringify({}))),
+      Promise.resolve(localStorage.setItem(SK.accountNicknames, JSON.stringify({}))),
+      Promise.resolve(localStorage.setItem(SK.strategies, JSON.stringify(DEFAULT_STRATEGIES))),
+      Promise.resolve(localStorage.setItem(SK.alerts, JSON.stringify([]))),
+      Promise.resolve(localStorage.setItem(SK.alertRules, JSON.stringify([]))),
     ]);
     notify("Everything cleared including decisions, strategies and nicknames.", "success");
   }, []);
@@ -888,9 +892,9 @@ export default function App() {
     setLivePrice({});
     setIndustry({});
     await Promise.all([
-      localStorage.setItem(SK.positions, JSON.stringify([])),
-      localStorage.setItem(SK.prices, JSON.stringify({})),
-      localStorage.setItem(SK.industries, JSON.stringify({})),
+      Promise.resolve(localStorage.setItem(SK.positions, JSON.stringify([]))),
+      Promise.resolve(localStorage.setItem(SK.prices, JSON.stringify({}))),
+      Promise.resolve(localStorage.setItem(SK.industries, JSON.stringify({}))),
     ]);
     notify("Positions cleared. Decisions, strategies and nicknames kept.", "success");
   }, []);
