@@ -507,19 +507,19 @@ export default function App() {
     (async () => {
       try {
         const [sp, ss, po, ind, dec, an, pr, eh, al, ar, te, sr, wd] = await Promise.all([
-          Promise.resolve({ value: localStorage.getItem(SK.strategies)),
-          Promise.resolve({ value: localStorage.getItem(SK.symbolStrategy)),
-          Promise.resolve({ value: localStorage.getItem(SK.positionOverride)),
-          Promise.resolve({ value: localStorage.getItem(SK.industries)),
-          Promise.resolve({ value: localStorage.getItem(SK.decisions)),
-          Promise.resolve({ value: localStorage.getItem(SK.accountNicknames)),
-          Promise.resolve({ value: localStorage.getItem(SK.prices)),
-          Promise.resolve({ value: localStorage.getItem(SK.equityHoldings)),
-          Promise.resolve({ value: localStorage.getItem(SK.alerts)),
-          Promise.resolve({ value: localStorage.getItem(SK.alertRules)),
-          Promise.resolve({ value: localStorage.getItem(SK.totalEquity)),
-          Promise.resolve({ value: localStorage.getItem(SK.symbolRatings)),
-          Promise.resolve({ value: localStorage.getItem(SK.watchlistData)),
+          Promise.resolve({ value: localStorage.getItem(SK.strategies) }),
+          Promise.resolve({ value: localStorage.getItem(SK.symbolStrategy) }),
+          Promise.resolve({ value: localStorage.getItem(SK.positionOverride) }),
+          Promise.resolve({ value: localStorage.getItem(SK.industries) }),
+          Promise.resolve({ value: localStorage.getItem(SK.decisions) }),
+          Promise.resolve({ value: localStorage.getItem(SK.accountNicknames) }),
+          Promise.resolve({ value: localStorage.getItem(SK.prices) }),
+          Promise.resolve({ value: localStorage.getItem(SK.equityHoldings) }),
+          Promise.resolve({ value: localStorage.getItem(SK.alerts) }),
+          Promise.resolve({ value: localStorage.getItem(SK.alertRules) }),
+          Promise.resolve({ value: localStorage.getItem(SK.totalEquity) }),
+          Promise.resolve({ value: localStorage.getItem(SK.symbolRatings) }),
+          Promise.resolve({ value: localStorage.getItem(SK.watchlistData) }),
         ]);
         try { if (sp) setStrategies(JSON.parse(sp.value)); } catch(e) { console.warn('strategies load error', e); }
         try { if (ss) setSymbolStrategy(JSON.parse(ss.value)); } catch(e) { console.warn('symbolStrategy load error', e); }
