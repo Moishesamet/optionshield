@@ -534,15 +534,15 @@ export default function App() {
         try { if (sr) setSymbolRatings(JSON.parse(sr.value)); } catch(e) { console.warn('symbolRatings load error', e); }
         try { if (wd) setWatchlistData(JSON.parse(wd.value)); } catch(e) { console.warn('watchlistData load error', e); }
         try {
-          const io = { value: localStorage.getItem("opts:industryOverrides");
+          const io = { value: localStorage.getItem("opts:industryOverrides") };
           if (io) setIndustryOverrides(JSON.parse(io.value));
         } catch(e) {}
         try {
-          const lb = { value: localStorage.getItem(SK.lastBackup);
+          const lb = { value: localStorage.getItem(SK.lastBackup) };
           if (lb) setLastBackup(JSON.parse(lb.value));
         } catch(e) {}
         try {
-          const st = { value: localStorage.getItem(SK.schwabTokens);
+          const st = { value: localStorage.getItem(SK.schwabTokens) };
           if (st) setSchwabTokens(JSON.parse(st.value));
         } catch(e) {}
 
@@ -568,7 +568,7 @@ export default function App() {
           if (changed) localStorage.setItem(SK.decisions, JSON.stringify(migrated));
         }
 
-        const posData = { value: localStorage.getItem(SK.positions);
+        const posData = { value: localStorage.getItem(SK.positions) };
         if (posData) setPositions(JSON.parse(posData.value));
       } catch (e) { console.log("Storage load error", e); }
     })();
