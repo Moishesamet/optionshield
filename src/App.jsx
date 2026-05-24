@@ -525,18 +525,18 @@ export default function App() {
           Promise.resolve({ value: localStorage.getItem(SK.symbolRatings) }),
           Promise.resolve({ value: localStorage.getItem(SK.watchlistData) }),
         ]);
-        try { if (sp) setStrategies(JSON.parse(sp.value)); } catch(e) { console.warn('strategies load error', e); }
-        try { if (ss) setSymbolStrategy(JSON.parse(ss.value)); } catch(e) { console.warn('symbolStrategy load error', e); }
-        try { if (po) setPosOverride(JSON.parse(po.value)); } catch(e) { console.warn('posOverride load error', e); }
-        try { if (ind) setIndustry(JSON.parse(ind.value)); } catch(e) { console.warn('industry load error', e); }
-        try { if (an) setAccountNicknames(JSON.parse(an.value)); } catch(e) { console.warn('accountNicknames load error', e); }
-        try { if (pr) setLivePrice(JSON.parse(pr.value)); } catch(e) { console.warn('prices load error', e); }
-        try { if (eh) setEquityHoldings(JSON.parse(eh.value)); } catch(e) { console.warn('equityHoldings load error', e); }
-        try { if (al) setAlerts(JSON.parse(al.value)); } catch(e) { console.warn('alerts load error', e); }
-        try { if (ar) setAlertRules(JSON.parse(ar.value)); } catch(e) { console.warn('alertRules load error', e); }
-        try { if (te) setTotalEquity(JSON.parse(te.value)); } catch(e) { console.warn('totalEquity load error', e); }
-        try { if (sr) setSymbolRatings(JSON.parse(sr.value)); } catch(e) { console.warn('symbolRatings load error', e); }
-        try { if (wd) setWatchlistData(JSON.parse(wd.value)); } catch(e) { console.warn('watchlistData load error', e); }
+        try { if (sp && sp.value) setStrategies(JSON.parse(sp.value)); } catch(e) {}
+        try { if (ss && ss.value) setSymbolStrategy(JSON.parse(ss.value)); } catch(e) {}
+        try { if (po && po.value) setPosOverride(JSON.parse(po.value)); } catch(e) {}
+        try { if (ind && ind.value) setIndustry(JSON.parse(ind.value)); } catch(e) {}
+        try { if (an && an.value) setAccountNicknames(JSON.parse(an.value)); } catch(e) {}
+        try { if (pr && pr.value) setLivePrice(JSON.parse(pr.value)); } catch(e) {}
+        try { if (eh && eh.value) setEquityHoldings(JSON.parse(eh.value)); } catch(e) {}
+        try { if (al && al.value) setAlerts(JSON.parse(al.value)); } catch(e) {}
+        try { if (ar && ar.value) setAlertRules(JSON.parse(ar.value)); } catch(e) {}
+        try { if (te && te.value) setTotalEquity(JSON.parse(te.value)); } catch(e) {}
+        try { if (sr && sr.value) setSymbolRatings(JSON.parse(sr.value)); } catch(e) {}
+        try { if (wd && wd.value) setWatchlistData(JSON.parse(wd.value)); } catch(e) {}
         try {
           const io = { value: localStorage.getItem("opts:industryOverrides") };
           if (io) setIndustryOverrides(JSON.parse(io.value));
@@ -551,7 +551,7 @@ export default function App() {
         } catch(e) {}
 
         // Load and migrate decisions — strip old group prefix from IDs
-        if (dec) {
+        if (dec && dec.value) {
           const rawDecisions = JSON.parse(dec.value);
           const migrated = {};
           Object.entries(rawDecisions).forEach(([id, val]) => {
