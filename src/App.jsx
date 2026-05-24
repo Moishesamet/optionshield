@@ -2481,13 +2481,22 @@ function PnLTab({ positions = [], livePrice = {}, strategies = [], getStrategy, 
       if (!accResp.ok) throw new Error("Account fetch failed: " + accResp.status);
       const accounts = await accResp.json();
 
+      // Schwab transactions API max range is 1 year
+      const from = new Date(fromDate);
+      const to = new Date(toDate);
+      const maxFrom = new Date(to);
+      maxFrom.setFullYear(maxFrom.getFullYear() - 1);
+      const effectiveFrom = from < maxFrom ? maxFrom : from;
+      const effectiveFromStr = effectiveFrom.toISOString().slice(0,10);
+      if (from < maxFrom) setLoadMsg("Note: Schwab limits history to 1 year. Fetching from " + effectiveFromStr + "...");
+
       let allTx = [];
       let count = 0;
       for (const acc of accounts) {
         setLoadMsg("Fetching transactions for account " + (++count) + " of " + accounts.length + "...");
         try {
           const txResp = await fetch(
-            "https://api.schwabapi.com/trader/v1/accounts/" + acc.hashValue + "/transactions?startDate=" + fromDate + "&endDate=" + toDate + "&types=TRADE",
+            "https://api.schwabapi.com/trader/v1/accounts/" + acc.hashValue + "/transactions?startDate=" + effectiveFromStr + "T00:00:00.000Z&endDate=" + toDate + "T23:59:59.999Z&types=TRADE",
             { headers: { "Authorization": "Bearer " + schwabTokens.accessToken } }
           );
           if (!txResp.ok) {
