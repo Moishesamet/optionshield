@@ -1218,7 +1218,7 @@ export default function App() {
         {tab === "exposure" && <ExposureTab positions={filteredPos} livePrice={livePrice} industry={industry} strategies={strategies} getStrategy={getStrategy} equityHoldings={equityHoldings} totalEquity={totalEquity} symbolRatings={symbolRatings} watchlistData={watchlistData} excludedStrategyIds={excludedStrategyIds} industryOverrides={industryOverrides} />}
         {tab === "alerts" && <AlertsTab alerts={alerts} onDismiss={dismissAlert} onDismissAll={dismissAllAlerts} onSnooze={snoozeAlert} strategies={strategies} positions={positions} livePrice={livePrice} />}
         {tab === "rules" && <RulesTab alertRules={alertRules} saveAlertRules={saveAlertRules} strategies={strategies} />}
-        {tab === "pnl" && <PnLTab positions={positions} livePrice={livePrice} strategies={strategies} getStrategy={getStrategy} accountNicknames={accountNicknames} />}
+        {tab === "pnl" && <PnLTab positions={positions} livePrice={livePrice} strategies={strategies} getStrategy={getStrategy} accountNicknames={accountNicknames} schwabTokens={schwabTokens} />}
         {tab === "backtester" && <BacktesterTab />}
         {tab === "builder" && <StrategyBuilderTab positions={positions} livePrice={livePrice} strategies={strategies} getStrategy={getStrategy} />}
         {tab === "strategies" && <StrategiesTab strategies={strategies} positions={positions} symbolStrategy={symbolStrategy} posOverride={posOverride} getStrategy={getStrategy} saveStrategies={saveStrategies} saveSymbolStrategy={saveSymbolStrategy} savePosOverride={savePosOverride} symbolRatings={symbolRatings} saveSymbolRatings={saveSymbolRatings} equityHoldings={equityHoldings} watchlistData={watchlistData} accountNicknames={accountNicknames} saveAccountNicknames={saveAccountNicknames} positions2={positions} />}
@@ -2413,221 +2413,406 @@ function StrategyBuilderTab({ positions = [], livePrice = {}, strategies = [], g
   );
 }
 
-function PnLTab({ positions, livePrice, strategies, getStrategy, accountNicknames = {} }) {
-  const [selectedExp, setSelectedExp] = useState(null);
-  const [groupBy, setGroupBy] = useState("symbol"); // symbol | strategy | account
-  const [sortKey, setSortKey] = useState("pnl");
-  const [sortDir, setSortDir] = useState("desc");
+function PnLTab({ positions, livePrice, strategies, getStrategy, accountNicknames = {}, schwabTokens }) {
+  const [transactions, setTransactions] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [loadMsg, setLoadMsg] = useState("");
+  const [error, setError] = useState("");
+  const [fromDate, setFromDate] = useState(() => {
+    const d = new Date(); d.setFullYear(d.getFullYear() - 1); return d.toISOString().slice(0,10);
+  });
+  const [toDate, setToDate] = useState(new Date().toISOString().slice(0,10));
+  const [groupBy, setGroupBy] = useState("symbol");
+  const [filterAccount, setFilterAccount] = useState("All");
+  const [filterStrategy, setFilterStrategy] = useState("All");
+  const [filterType, setFilterType] = useState("All");
+  const [manualOverrides, setManualOverrides] = useState({});
+  const [editingTrade, setEditingTrade] = useState(null);
 
-  // All expiry dates
-  const expDates = useMemo(() =>
-    [...new Set(positions.map(p => p.exp).filter(Boolean))]
-      .sort((a, b) => (parseExpiry(a)||0) - (parseExpiry(b)||0)),
-    [positions]
-  );
+  // Strategy inference based on trade characteristics
+  const inferStrategy = (tx) => {
+    if (!tx) return null;
+    const sym = tx.symbol || "";
+    const desc = (tx.description || "").toLowerCase();
+    const dte = tx.dte || 0;
+    const isShortPut = tx.qty < 0 && tx.putCall === "PUT";
+    const isLongPut = tx.qty > 0 && tx.putCall === "PUT";
+    const isShortCall = tx.qty < 0 && tx.putCall === "CALL";
+    const isLongCall = tx.qty > 0 && tx.putCall === "CALL";
 
-  // Default to next upcoming expiry
-  const nextExp = expDates.find(e => (dte(e) || -1) >= 0) || expDates[0];
-  const chosenExp = selectedExp || nextExp;
-
-  // Positions for chosen expiry
-  const expPositions = useMemo(() =>
-    positions.filter(p => p.exp === chosenExp),
-    [positions, chosenExp]
-  );
-
-  // P&L calculation per position at expiration (zero extrinsic)
-  const calcPnL = (p) => {
-    const price = livePrice[p.symbol];
-    if (price == null) return null;
-    const premium = (p.tradePrice || 0) * Math.abs(p.qty) * 100;
-    const contracts = Math.abs(p.qty);
-
-    if (p.isShortPut) {
-      if (price >= p.strike) return premium; // OTM → keep full premium
-      return premium - (p.strike - price) * contracts * 100; // ITM → premium minus assignment loss
+    // Check OptionShield assignment first
+    const pos = positions.find(p => p.symbol === sym);
+    if (pos) {
+      const strat = strategies.find(s => s.id === getStrategy(pos));
+      if (strat) return strat.name;
     }
-    if (p.isLongPut) {
-      if (price >= p.strike) return -premium; // OTM → lose premium paid
-      return (p.strike - price) * contracts * 100 - premium; // ITM → intrinsic minus cost
-    }
-    if (p.isShortCall) {
-      if (price <= p.strike) return premium; // OTM → keep full premium
-      return premium - (price - p.strike) * contracts * 100; // ITM → premium minus assignment loss
-    }
-    if (p.isLongCall) {
-      if (price <= p.strike) return -premium; // OTM → lose premium paid
-      return (price - p.strike) * contracts * 100 - premium; // ITM → intrinsic minus cost
-    }
-    return null;
+
+    // Manual override
+    if (manualOverrides[tx.id]) return manualOverrides[tx.id];
+
+    // AI inference
+    if (["SPY","QQQ","IWM","SPX","NDX","RUT"].includes(sym)) return "Index";
+    if (dte > 300 && isLongCall) return "Paid LT";
+    if (dte > 300 && isLongPut) return "Paid LT";
+    if (isShortPut && dte > 60) return "Premium Harvesting";
+    if (isShortPut && dte <= 60) return "Premium Harvesting";
+    if (isLongPut && isShortPut) return "Butterflies";
+    if (isShortCall && isLongCall) return "Ratio";
+    if (isShortCall) return "Ratio";
+
+    return "Unallocated";
   };
 
-  // Rows with P&L
-  const rows = useMemo(() => expPositions.map(p => {
-    const pnl = calcPnL(p);
-    const price = livePrice[p.symbol];
-    const isITM = price != null && (
-      (p.isShortPut && price < p.strike) ||
-      (p.isLongPut && price < p.strike) ||
-      (p.isShortCall && price > p.strike) ||
-      (p.isLongCall && price > p.strike)
-    );
-    const typeLabel = p.isShortPut ? "Short Put" : p.isLongPut ? "Long Put" : p.isShortCall ? "Short Call" : "Long Call";
-    const stratName = strategies.find(s => s.id === getStrategy(p))?.name || "—";
-    const accName = accountNicknames[p.account] || p.account || "—";
-    return { ...p, pnl, isITM, typeLabel, stratName, accName };
-  }), [expPositions, livePrice]);
+  // Load transactions from Schwab API
+  const loadTransactions = async () => {
+    if (!schwabTokens || !schwabTokens.accessToken) {
+      setError("Connect Schwab API in Import CSV tab first.");
+      return;
+    }
+    setLoading(true); setError(""); setLoadMsg("Fetching accounts...");
+    try {
+      const accResp = await fetch("https://api.schwabapi.com/trader/v1/accounts/accountNumbers", {
+        headers: { "Authorization": "Bearer " + schwabTokens.accessToken }
+      });
+      if (!accResp.ok) throw new Error("Account fetch failed: " + accResp.status);
+      const accounts = await accResp.json();
 
-  const totalPnL = rows.reduce((s, r) => s + (r.pnl || 0), 0);
-  const gainRows = rows.filter(r => (r.pnl || 0) >= 0);
-  const lossRows = rows.filter(r => (r.pnl || 0) < 0);
-  const totalGain = gainRows.reduce((s, r) => s + (r.pnl || 0), 0);
-  const totalLoss = lossRows.reduce((s, r) => s + (r.pnl || 0), 0);
+      let allTx = [];
+      let count = 0;
+      for (const acc of accounts) {
+        setLoadMsg("Fetching transactions for account " + (++count) + " of " + accounts.length + "...");
+        try {
+          const txResp = await fetch(
+            "https://api.schwabapi.com/trader/v1/accounts/" + acc.hashValue + "/transactions?startDate=" + fromDate + "T00:00:00.000Z&endDate=" + toDate + "T23:59:59.999Z&types=TRADE,DIVIDEND,INTEREST,OTHER",
+            { headers: { "Authorization": "Bearer " + schwabTokens.accessToken } }
+          );
+          if (!txResp.ok) continue;
+          const txData = await txResp.json();
+          const txList = Array.isArray(txData) ? txData : [];
+
+          txList.forEach(tx => {
+            const ti = tx.transferItems || [];
+            ti.forEach(item => {
+              const inst = item.instrument || {};
+              const isOption = inst.assetType === "OPTION";
+              const isEquity = inst.assetType === "EQUITY";
+              const isCash = inst.assetType === "CASH_EQUIVALENT" || tx.type === "DIVIDEND" || tx.type === "INTEREST";
+
+              if (!isOption && !isEquity && !isCash) return;
+
+              const qty = parseFloat(item.amount) || 0;
+              const price = parseFloat(item.price) || 0;
+              const cost = parseFloat(item.cost) || 0;
+              const fees = parseFloat(tx.fees || 0);
+
+              let putCall = null;
+              let strike = null;
+              let expiry = null;
+              let underlyingSymbol = inst.symbol || "";
+
+              if (isOption) {
+                putCall = inst.putCall || null;
+                strike = parseFloat(inst.strikePrice) || null;
+                expiry = inst.expirationDate || null;
+                underlyingSymbol = inst.underlyingSymbol || inst.symbol || "";
+              }
+
+              allTx.push({
+                id: tx.activityId + "_" + (inst.symbol || "cash") + "_" + Math.random(),
+                date: tx.tradeDate || tx.settlementDate || "",
+                account: acc.accountNumber,
+                accountNick: accountNicknames[acc.accountNumber] || acc.accountNumber,
+                symbol: underlyingSymbol || inst.symbol || "",
+                description: inst.description || tx.description || "",
+                type: tx.type || "",
+                assetType: inst.assetType || "CASH",
+                putCall,
+                strike,
+                expiry,
+                qty,
+                price,
+                cost,
+                fees: isOption ? fees : 0,
+                netAmount: parseFloat(tx.netAmount) || 0,
+                isOption,
+                isEquity,
+                isCash,
+                dte: expiry ? Math.round((new Date(expiry) - new Date()) / 86400000) : 0,
+              });
+            });
+          });
+        } catch(e) { console.warn("Account tx error:", e); }
+      }
+
+      setTransactions(allTx);
+      setLoadMsg("");
+      if (allTx.length === 0) setError("No transactions found for the selected date range.");
+    } catch(e) { setError("⚠ " + e.message); setLoadMsg(""); }
+    setLoading(false);
+  };
+
+  // Accounts and strategies for filters
+  const accounts = useMemo(() => ["All", ...new Set(transactions.map(t => t.accountNick || t.account).filter(Boolean))], [transactions]);
+  const strategyNames = useMemo(() => ["All", ...strategies.map(s => s.name), "Unallocated"], [strategies]);
+
+  // Filtered transactions
+  const filtered = useMemo(() => transactions.filter(tx => {
+    if (filterAccount !== "All" && (tx.accountNick || tx.account) !== filterAccount) return false;
+    const strat = inferStrategy(tx);
+    if (filterStrategy !== "All" && strat !== filterStrategy) return false;
+    if (filterType === "Options" && !tx.isOption) return false;
+    if (filterType === "Equity" && !tx.isEquity) return false;
+    if (filterType === "Cash" && !tx.isCash) return false;
+    return true;
+  }), [transactions, filterAccount, filterStrategy, filterType, manualOverrides]);
+
+  // Unrealized P&L from open positions
+  const unrealizedRows = useMemo(() => positions.map(p => {
+    const price = livePrice[p.symbol];
+    if (!price) return null;
+    const markVal = price * Math.abs(p.qty) * 100;
+    const costBasis = (p.tradePrice || 0) * Math.abs(p.qty) * 100;
+    const pnl = p.qty < 0 ? costBasis - markVal : markVal - costBasis;
+    const stratName = strategies.find(s => s.id === getStrategy(p))?.name || "Unallocated";
+    return {
+      id: p.id,
+      date: p.exp || "",
+      account: accountNicknames[p.account] || p.account || "",
+      symbol: p.symbol,
+      description: p.exp + " $" + p.strike + " " + (p.isShortPut||p.isLongPut?"Put":"Call"),
+      type: "Unrealized",
+      stratName,
+      qty: p.qty,
+      price: price,
+      cost: costBasis,
+      pnl,
+      fees: 0,
+      netPnl: pnl,
+      pnlPct: costBasis > 0 ? pnl/costBasis*100 : null,
+    };
+  }).filter(Boolean), [positions, livePrice]);
+
+  // Realized P&L from transactions
+  const realizedRows = useMemo(() => filtered.map(tx => {
+    const stratName = inferStrategy(tx) || "Unallocated";
+    const pnl = tx.netAmount;
+    const cost = Math.abs(tx.cost) || Math.abs(tx.qty * tx.price * (tx.isOption ? 100 : 1));
+    return {
+      id: tx.id,
+      date: tx.date ? tx.date.slice(0,10) : "",
+      account: tx.accountNick || tx.account,
+      symbol: tx.symbol,
+      description: tx.description,
+      type: tx.type,
+      stratName,
+      qty: tx.qty,
+      price: tx.price,
+      cost,
+      pnl,
+      fees: tx.fees,
+      netPnl: pnl - tx.fees,
+      pnlPct: cost > 0 ? pnl/cost*100 : null,
+      isOption: tx.isOption,
+    };
+  }), [filtered, manualOverrides]);
+
+  // Combined for summary
+  const allRows = useMemo(() => [...realizedRows, ...unrealizedRows], [realizedRows, unrealizedRows]);
+  const totalRealized = realizedRows.reduce((s,r) => s + r.pnl, 0);
+  const totalUnrealized = unrealizedRows.reduce((s,r) => s + r.pnl, 0);
+  const totalFees = realizedRows.reduce((s,r) => s + r.fees, 0);
+  const totalNet = totalRealized + totalUnrealized - totalFees;
 
   // Grouping
   const grouped = useMemo(() => {
     const map = {};
-    rows.forEach(r => {
-      const key = groupBy === "symbol" ? r.symbol : groupBy === "strategy" ? r.stratName : r.accName;
-      if (!map[key]) map[key] = { key, rows: [], pnl: 0 };
+    allRows.forEach(r => {
+      let key;
+      if (groupBy === "symbol") key = r.symbol || "Unknown";
+      else if (groupBy === "month") key = r.date ? r.date.slice(0,7) : "Unknown";
+      else if (groupBy === "year") key = r.date ? r.date.slice(0,4) : "Unknown";
+      else if (groupBy === "account") key = r.account || "Unknown";
+      else if (groupBy === "strategy") key = r.stratName || "Unallocated";
+      else key = r.symbol;
+
+      if (!map[key]) map[key] = { key, rows: [], pnl: 0, fees: 0, netPnl: 0 };
       map[key].rows.push(r);
       map[key].pnl += r.pnl || 0;
+      map[key].fees += r.fees || 0;
+      map[key].netPnl += r.netPnl || 0;
     });
-    return Object.values(map).sort((a, b) => b.pnl - a.pnl);
-  }, [rows, groupBy]);
+    return Object.values(map).sort((a,b) => b.netPnl - a.netPnl);
+  }, [allRows, groupBy]);
 
-  // Sort rows within display
-  const handleSort = (k) => {
-    if (sortKey === k) setSortDir(d => d === "asc" ? "desc" : "asc");
-    else { setSortKey(k); setSortDir("desc"); }
-  };
-  const thStyle = (k) => ({ ...S.th, cursor: "pointer", userSelect: "none", color: sortKey === k ? "#4cc9f0" : "#888" });
-  const arrow = (k) => sortKey === k ? (sortDir === "asc" ? " ↑" : " ↓") : " ↕";
-
-  const sortedRows = [...rows].sort((a, b) => {
-    let av, bv;
-    if (sortKey === "symbol") { av = a.symbol; bv = b.symbol; }
-    else if (sortKey === "type") { av = a.typeLabel; bv = b.typeLabel; }
-    else if (sortKey === "strike") { av = a.strike; bv = b.strike; }
-    else if (sortKey === "qty") { av = a.qty; bv = b.qty; }
-    else if (sortKey === "stockPx") { av = livePrice[a.symbol] || 0; bv = livePrice[b.symbol] || 0; }
-    else if (sortKey === "strategy") { av = a.stratName; bv = b.stratName; }
-    else if (sortKey === "account") { av = a.accName; bv = b.accName; }
-    else { av = a.pnl || -999999; bv = b.pnl || -999999; }
-    if (av < bv) return sortDir === "asc" ? -1 : 1;
-    if (av > bv) return sortDir === "asc" ? 1 : -1;
-    return 0;
-  });
+  const pnlColor = (v) => v >= 0 ? "#06d6a0" : "#ff4d6d";
 
   return (
     <div>
-      {/* Summary cards */}
+      {/* Summary Cards */}
       <div style={{ ...S.summaryRow, gap: 10, marginBottom: 16 }}>
-        <div style={{ ...S.card, borderTop: "3px solid " + (totalPnL >= 0 ? "#06d6a0" : "#ff4d6d"), flex: "1 1 160px" }}>
-          <div style={{ fontSize: 20, fontWeight: 700, color: totalPnL >= 0 ? "#06d6a0" : "#ff4d6d" }}>{totalPnL >= 0 ? "+" : ""}{fmt$(totalPnL)}</div>
-          <div style={S.cardLabel}>Total Hypothetical P&L</div>
+        <div style={{ ...S.card, flex: "1 1 120px", borderTop: "3px solid #06d6a0", padding: "10px 14px" }}>
+          <div style={{ fontSize: 16, fontWeight: 700, color: pnlColor(totalRealized) }}>{totalRealized >= 0 ? "+" : ""}{fmt$(totalRealized)}</div>
+          <div style={{ fontSize: 10, color: "#888" }}>Realized P&L</div>
         </div>
-        <div style={{ ...S.card, borderTop: "3px solid #06d6a0", flex: "1 1 140px" }}>
-          <div style={{ fontSize: 18, fontWeight: 700, color: "#06d6a0" }}>+{fmt$(totalGain)}</div>
-          <div style={S.cardLabel}>Total Gains ({gainRows.length} positions)</div>
+        <div style={{ ...S.card, flex: "1 1 120px", borderTop: "3px solid #4cc9f0", padding: "10px 14px" }}>
+          <div style={{ fontSize: 16, fontWeight: 700, color: pnlColor(totalUnrealized) }}>{totalUnrealized >= 0 ? "+" : ""}{fmt$(totalUnrealized)}</div>
+          <div style={{ fontSize: 10, color: "#888" }}>Unrealized P&L</div>
         </div>
-        <div style={{ ...S.card, borderTop: "3px solid #ff4d6d", flex: "1 1 140px" }}>
-          <div style={{ fontSize: 18, fontWeight: 700, color: "#ff4d6d" }}>{fmt$(totalLoss)}</div>
-          <div style={S.cardLabel}>Total Losses ({lossRows.length} positions)</div>
+        <div style={{ ...S.card, flex: "1 1 120px", borderTop: "3px solid #ff9f1c", padding: "10px 14px" }}>
+          <div style={{ fontSize: 16, fontWeight: 700, color: "#ff9f1c" }}>-{fmt$(totalFees)}</div>
+          <div style={{ fontSize: 10, color: "#888" }}>Total Fees</div>
         </div>
-        <div style={{ ...S.card, borderTop: "3px solid #888", flex: "1 1 120px" }}>
-          <div style={{ fontSize: 18, fontWeight: 700, color: "#888" }}>{rows.length}</div>
-          <div style={S.cardLabel}>Positions on {chosenExp ? fmtExpDate(chosenExp) : "—"}</div>
+        <div style={{ ...S.card, flex: "1 1 120px", borderTop: "3px solid #ffd166", padding: "10px 14px" }}>
+          <div style={{ fontSize: 18, fontWeight: 700, color: pnlColor(totalNet) }}>{totalNet >= 0 ? "+" : ""}{fmt$(totalNet)}</div>
+          <div style={{ fontSize: 10, color: "#888" }}>Net Total P&L</div>
         </div>
       </div>
 
-      {/* Filter row */}
-      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 14, alignItems: "flex-end" }}>
+      {/* Filters */}
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end", marginBottom: 14 }}>
         <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-          <div style={{ fontSize: 9, color: "#666", letterSpacing: 0.8, textTransform: "uppercase" }}>Expiry Date</div>
-          <select value={chosenExp || ""} onChange={e => setSelectedExp(e.target.value || null)}
-            style={{ ...S.sortSelect, minWidth: 140, border: "1px solid rgba(76,201,240,0.4)", color: "#4cc9f0" }}>
-            {expDates.map(e => <option key={e} value={e}>{fmtExpDate(e)} ({dte(e)}d)</option>)}
-          </select>
+          <div style={{ fontSize: 10, color: "#666", textTransform: "uppercase", letterSpacing: 0.8 }}>From</div>
+          <input type="date" value={fromDate} onChange={e => setFromDate(e.target.value)} style={{ ...S.input, fontSize: 12 }} />
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-          <div style={{ fontSize: 9, color: "#666", letterSpacing: 0.8, textTransform: "uppercase" }}>Group By</div>
-          <select value={groupBy} onChange={e => setGroupBy(e.target.value)} style={{ ...S.sortSelect }}>
+          <div style={{ fontSize: 10, color: "#666", textTransform: "uppercase", letterSpacing: 0.8 }}>To</div>
+          <input type="date" value={toDate} onChange={e => setToDate(e.target.value)} style={{ ...S.input, fontSize: 12 }} />
+        </div>
+        <button onClick={loadTransactions} disabled={loading}
+          style={{ ...S.saveBtn, padding: "8px 18px", fontSize: 12, opacity: loading ? 0.6 : 1, alignSelf: "flex-end" }}>
+          {loading ? loadMsg || "Loading..." : "📥 Load from Schwab"}
+        </button>
+        <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+          <div style={{ fontSize: 10, color: "#666", textTransform: "uppercase", letterSpacing: 0.8 }}>Group By</div>
+          <select value={groupBy} onChange={e => setGroupBy(e.target.value)} style={S.sortSelect}>
             <option value="symbol">Symbol</option>
-            <option value="strategy">Strategy</option>
+            <option value="month">Month</option>
+            <option value="year">Year</option>
             <option value="account">Account</option>
+            <option value="strategy">Strategy</option>
           </select>
         </div>
-        <div style={{ fontSize: 11, color: "#888", alignSelf: "flex-end", marginBottom: 4 }}>
-          Assumes stock prices stay at current levels · All options expire with zero extrinsic value
+        <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+          <div style={{ fontSize: 10, color: "#666", textTransform: "uppercase", letterSpacing: 0.8 }}>Account</div>
+          <select value={filterAccount} onChange={e => setFilterAccount(e.target.value)} style={S.sortSelect}>
+            {accounts.map(a => <option key={a} value={a}>{a}</option>)}
+          </select>
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+          <div style={{ fontSize: 10, color: "#666", textTransform: "uppercase", letterSpacing: 0.8 }}>Strategy</div>
+          <select value={filterStrategy} onChange={e => setFilterStrategy(e.target.value)} style={S.sortSelect}>
+            {strategyNames.map(s => <option key={s} value={s}>{s}</option>)}
+          </select>
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+          <div style={{ fontSize: 10, color: "#666", textTransform: "uppercase", letterSpacing: 0.8 }}>Type</div>
+          <select value={filterType} onChange={e => setFilterType(e.target.value)} style={S.sortSelect}>
+            <option value="All">All</option>
+            <option value="Options">Options</option>
+            <option value="Equity">Equity</option>
+            <option value="Cash">Dividends/Interest</option>
+          </select>
         </div>
       </div>
 
-      {/* Group summary bars */}
+      {error && <div style={{ padding: "10px 14px", background: "rgba(255,77,109,0.08)", border: "1px solid rgba(255,77,109,0.2)", borderRadius: 8, color: "#ff4d6d", fontSize: 12, marginBottom: 14 }}>{error}</div>}
+
+      {/* Grouped Summary */}
       {grouped.length > 0 && (
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 16 }}>
-          {grouped.map(g => (
-            <div key={g.key} style={{ background: "rgba(255,255,255,0.04)", borderRadius: 8, padding: "8px 14px", border: "1px solid " + (g.pnl >= 0 ? "rgba(6,214,160,0.2)" : "rgba(255,77,109,0.2)") }}>
-              <div style={{ fontSize: 12, color: "#ccc", marginBottom: 2 }}>{g.key}</div>
-              <div style={{ fontSize: 14, fontWeight: 700, color: g.pnl >= 0 ? "#06d6a0" : "#ff4d6d" }}>{g.pnl >= 0 ? "+" : ""}{fmt$(g.pnl)}</div>
-              <div style={{ fontSize: 10, color: "#555" }}>{g.rows.length} positions</div>
-            </div>
-          ))}
+        <div style={{ marginBottom: 20 }}>
+          <div style={{ ...S.sectionHeader, marginBottom: 10 }}>
+            <span style={{ fontSize: 13, fontWeight: 700 }}>P&L by {groupBy.charAt(0).toUpperCase() + groupBy.slice(1)}</span>
+            <span style={{ fontSize: 11, color: "#666" }}>{grouped.length} groups</span>
+          </div>
+          <div style={S.tableWrap}>
+            <table style={S.table}>
+              <thead>
+                <tr>
+                  <th style={S.th}>{groupBy.charAt(0).toUpperCase() + groupBy.slice(1)}</th>
+                  <th style={{ ...S.th, textAlign: "right" }}>Trades</th>
+                  <th style={{ ...S.th, textAlign: "right" }}>Gross P&L</th>
+                  <th style={{ ...S.th, textAlign: "right" }}>Fees</th>
+                  <th style={{ ...S.th, textAlign: "right" }}>Net P&L</th>
+                  <th style={{ ...S.th, textAlign: "right" }}>% Return</th>
+                  <th style={{ ...S.th }}>Strategy</th>
+                </tr>
+              </thead>
+              <tbody>
+                {grouped.map((g, i) => {
+                  const totalCost = g.rows.reduce((s,r) => s + Math.abs(r.cost||0), 0);
+                  const pctReturn = totalCost > 0 ? g.netPnl / totalCost * 100 : null;
+                  const strat = g.rows[0]?.stratName || "";
+                  return (
+                    <tr key={g.key} style={{ background: i%2===0?"rgba(255,255,255,0.02)":"transparent" }}>
+                      <td style={{ ...S.td, fontWeight: 700, color: "#f0f0f0" }}>{g.key}</td>
+                      <td style={{ ...S.td, textAlign: "right", color: "#888" }}>{g.rows.length}</td>
+                      <td style={{ ...S.td, textAlign: "right", color: pnlColor(g.pnl), fontWeight: 600 }}>{g.pnl >= 0 ? "+" : ""}{fmt$(g.pnl)}</td>
+                      <td style={{ ...S.td, textAlign: "right", color: "#ff9f1c" }}>{g.fees > 0 ? "-" + fmt$(g.fees) : "—"}</td>
+                      <td style={{ ...S.td, textAlign: "right", fontWeight: 700, color: pnlColor(g.netPnl) }}>{g.netPnl >= 0 ? "+" : ""}{fmt$(g.netPnl)}</td>
+                      <td style={{ ...S.td, textAlign: "right", color: pctReturn != null ? pnlColor(pctReturn) : "#888" }}>
+                        {pctReturn != null ? (pctReturn >= 0 ? "+" : "") + pctReturn.toFixed(1) + "%" : "—"}
+                      </td>
+                      <td style={{ ...S.td, color: "#888", fontSize: 11 }}>
+                        <select value={strat} onChange={e => {
+                          const newOverrides = { ...manualOverrides };
+                          g.rows.forEach(r => { newOverrides[r.id] = e.target.value; });
+                          setManualOverrides(newOverrides);
+                        }} style={{ ...S.sortSelect, fontSize: 10, padding: "2px 6px" }}>
+                          {strategyNames.filter(s => s !== "All").map(s => <option key={s} value={s}>{s}</option>)}
+                        </select>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
-      {/* Detail table */}
-      {rows.length === 0 ? (
-        <EmptyState text={"No positions expiring on " + (chosenExp ? fmtExpDate(chosenExp) : "selected date")} />
-      ) : (
-        <div style={S.tableWrap}>
-          <table style={S.table}>
-            <thead>
-              <tr>
-                <th style={thStyle("symbol")} onClick={() => handleSort("symbol")}>Symbol{arrow("symbol")}</th>
-                <th style={thStyle("type")} onClick={() => handleSort("type")}>Type{arrow("type")}</th>
-                <th style={{ ...thStyle("strike"), textAlign: "right" }} onClick={() => handleSort("strike")}>Strike{arrow("strike")}</th>
-                <th style={{ ...thStyle("qty"), textAlign: "right" }} onClick={() => handleSort("qty")}>Qty{arrow("qty")}</th>
-                <th style={{ ...thStyle("stockPx"), textAlign: "right" }} onClick={() => handleSort("stockPx")}>Stock Px{arrow("stockPx")}</th>
-                <th style={S.th}>Status</th>
-                <th style={thStyle("strategy")} onClick={() => handleSort("strategy")}>Strategy{arrow("strategy")}</th>
-                <th style={thStyle("account")} onClick={() => handleSort("account")}>Account{arrow("account")}</th>
-                <th style={{ ...thStyle("pnl"), textAlign: "right" }} onClick={() => handleSort("pnl")}>Hyp. P&L{arrow("pnl")}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {sortedRows.map((r, i) => {
-                const price = livePrice[r.symbol];
-                return (
-                  <tr key={r.id} style={{ background: i % 2 === 0 ? "rgba(255,255,255,0.02)" : "transparent" }}>
+      {/* Unrealized positions always shown */}
+      {unrealizedRows.length > 0 && transactions.length === 0 && (
+        <div>
+          <div style={{ ...S.sectionHeader, marginBottom: 10 }}>
+            <span style={{ fontSize: 13, fontWeight: 700 }}>Unrealized P&L — Open Positions</span>
+            <span style={{ fontSize: 11, color: "#4cc9f0" }}>Click "Load from Schwab" to add realized P&L</span>
+          </div>
+          <div style={{ ...S.tableWrap, maxHeight: 320 }}>
+            <table style={S.table}>
+              <thead>
+                <tr>
+                  <th style={S.th}>Symbol</th>
+                  <th style={S.th}>Position</th>
+                  <th style={S.th}>Strategy</th>
+                  <th style={S.th}>Account</th>
+                  <th style={{ ...S.th, textAlign: "right" }}>Mark</th>
+                  <th style={{ ...S.th, textAlign: "right" }}>Unrealized P&L</th>
+                  <th style={{ ...S.th, textAlign: "right" }}>% Return</th>
+                </tr>
+              </thead>
+              <tbody>
+                {unrealizedRows.map((r, i) => (
+                  <tr key={r.id} style={{ background: i%2===0?"rgba(255,255,255,0.02)":"transparent" }}>
                     <td style={{ ...S.td, fontWeight: 700, color: "#f0f0f0" }}>{r.symbol}</td>
-                    <td style={{ ...S.td, color: r.qty < 0 ? "#ff9f1c" : "#4cc9f0", fontSize: 11 }}>{r.typeLabel}</td>
-                    <td style={{ ...S.td, textAlign: "right", color: "#ccc" }}>${r.strike}</td>
-                    <td style={{ ...S.td, textAlign: "right", color: r.qty < 0 ? "#ff4d6d" : "#06d6a0" }}>{r.qty}</td>
-                    <td style={{ ...S.td, textAlign: "right", color: "#ddd" }}>{price ? "$" + (price.toFixed(2)) : "—"}</td>
-                    <td style={{ ...S.td }}>
-                      <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 4,
-                        background: r.isITM ? "rgba(255,77,109,0.15)" : "rgba(6,214,160,0.15)",
-                        color: r.isITM ? "#ff4d6d" : "#06d6a0",
-                        border: "1px solid " + (r.isITM ? "rgba(255,77,109,0.3)" : "rgba(6,214,160,0.3)") }}>
-                        {r.isITM ? "ITM" : "OTM"}
-                      </span>
-                    </td>
+                    <td style={{ ...S.td, color: "#aaa", fontSize: 11 }}>{r.description}</td>
                     <td style={{ ...S.td, color: "#888", fontSize: 11 }}>{r.stratName}</td>
-                    <td style={{ ...S.td, color: "#888", fontSize: 11 }}>{r.accName}</td>
-                    <td style={{ ...S.td, textAlign: "right", fontWeight: 700, color: (r.pnl || 0) >= 0 ? "#06d6a0" : "#ff4d6d" }}>
-                      {r.pnl != null ? `${r.pnl >= 0 ? "+" : ""}${fmt$(r.pnl)}` : "—"}
+                    <td style={{ ...S.td, color: "#888", fontSize: 11 }}>{r.account}</td>
+                    <td style={{ ...S.td, textAlign: "right", color: "#ccc" }}>${r.price.toFixed(2)}</td>
+                    <td style={{ ...S.td, textAlign: "right", fontWeight: 700, color: pnlColor(r.pnl) }}>{r.pnl >= 0 ? "+" : ""}{fmt$(r.pnl)}</td>
+                    <td style={{ ...S.td, textAlign: "right", color: r.pnlPct != null ? pnlColor(r.pnlPct) : "#888" }}>
+                      {r.pnlPct != null ? (r.pnlPct >= 0 ? "+" : "") + r.pnlPct.toFixed(1) + "%" : "—"}
                     </td>
                   </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
     </div>
   );
 }
+
 
 function PositionsTab({ positions, livePrice, industry, strategies, getStrategy, decisions, saveDecision, accountNicknames, alerts = [], excludedStrategyIds = new Set() }) {
   const [sortKey, setSortKey] = useState("plPct");
