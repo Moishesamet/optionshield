@@ -2445,292 +2445,128 @@ function StrategyBuilderTab({ positions = [], livePrice = {}, strategies = [], g
 }
 
 function PnLTab({ positions = [], livePrice = {}, strategies = [], getStrategy, accountNicknames = {}, schwabTokens }) {
-  const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(false);
   const [loadMsg, setLoadMsg] = useState("");
   const [error, setError] = useState("");
-  const [fromDate, setFromDate] = useState(() => {
-    const d = new Date(); d.setFullYear(d.getFullYear() - 1); return d.toISOString().slice(0,10);
-  });
-  const [toDate, setToDate] = useState(new Date().toISOString().slice(0,10));
   const [groupBy, setGroupBy] = useState("symbol");
   const [filterAccount, setFilterAccount] = useState("All");
   const [filterStrategy, setFilterStrategy] = useState("All");
   const [filterType, setFilterType] = useState("All");
+  const [sortKey, setSortKey] = useState("pnl");
+  const [sortDir, setSortDir] = useState("desc");
   const [manualOverrides, setManualOverrides] = useState({});
-  const [editingTrade, setEditingTrade] = useState(null);
+  const [expandedKey, setExpandedKey] = useState(null);
 
-  // Strategy inference based on trade characteristics
-  const inferStrategy = (tx) => {
-    if (!tx) return null;
-    const sym = tx.symbol || "";
-    const desc = (tx.description || "").toLowerCase();
-    const dte = tx.dte || 0;
-    const isShortPut = tx.qty < 0 && tx.putCall === "PUT";
-    const isLongPut = tx.qty > 0 && tx.putCall === "PUT";
-    const isShortCall = tx.qty < 0 && tx.putCall === "CALL";
-    const isLongCall = tx.qty > 0 && tx.putCall === "CALL";
-
-    // Check OptionShield assignment first
-    const pos = (positions || []).find(p => p.symbol === sym);
+  const inferStrategy = (sym) => {
+    if (manualOverrides[sym]) return manualOverrides[sym];
+    const pos = (positions || []).find(function(p) { return p.symbol === sym; });
     if (pos) {
-      const strat = (strategies || []).find(s => s.id === getStrategy(pos));
+      const strat = (strategies || []).find(function(s) { return s.id === getStrategy(pos); });
       if (strat && strat.name) return strat.name;
     }
-
-    // Manual override
-    if (manualOverrides[tx.id]) return manualOverrides[tx.id];
-
-    // AI inference
-    if (["SPY","QQQ","IWM","SPX","NDX","RUT"].includes(sym)) return "Index";
-    if (dte > 300 && isLongCall) return "Paid LT";
-    if (dte > 300 && isLongPut) return "Paid LT";
-    if (isShortPut && dte > 60) return "Premium Harvesting";
-    if (isShortPut && dte <= 60) return "Premium Harvesting";
-    if (isLongPut && isShortPut) return "Butterflies";
-    if (isShortCall && isLongCall) return "Ratio";
-    if (isShortCall) return "Ratio";
-
+    if (["SPY","QQQ","IWM","SPX","NDX","RUT"].indexOf(sym) >= 0) return "Index";
     return "Unallocated";
   };
 
-  // Load transactions from Schwab API
-  const loadTransactions = async () => {
-    if (!schwabTokens || !schwabTokens.accessToken) {
-      setError("Connect Schwab API in Import CSV tab first.");
-      return;
-    }
-    setLoading(true); setError(""); setLoadMsg("Fetching accounts...");
-    try {
-      const accResp = await fetch("https://api.schwabapi.com/trader/v1/accounts/accountNumbers", {
-        headers: { "Authorization": "Bearer " + schwabTokens.accessToken }
-      });
-      if (!accResp.ok) throw new Error("Account fetch failed: " + accResp.status);
-      const accounts = await accResp.json();
+  const unrealizedRows = useMemo(function() {
+    return (positions || []).map(function(p) {
+      const markPrice = p.mark || p.markPrice;
+      const tradePrice = p.tradePrice || 0;
+      if (markPrice == null) return null;
+      const qty = Math.abs(p.qty);
+      const isShort = p.qty < 0;
+      const pnl = isShort ? (tradePrice - markPrice) * qty * 100 : (markPrice - tradePrice) * qty * 100;
+      const costBasis = tradePrice * qty * 100;
+      const stratName = inferStrategy(p.symbol);
+      const accName = (accountNicknames || {})[p.account] || p.account || "Unknown";
+      const expDate = parseExpiry(p.exp);
+      const dateObj = expDate ? new Date(expDate) : null;
+      const month = dateObj ? String(dateObj.getMonth()+1).padStart(2,"0") + "/" + String(dateObj.getFullYear()).slice(-2) : "Unknown";
+      const year = dateObj ? String(dateObj.getFullYear()) : "Unknown";
+      return {
+        id: p.id, symbol: p.symbol,
+        description: (p.exp || "") + " $" + p.strike + " " + (p.isShortPut||p.isLongPut?"Put":"Call"),
+        stratName: stratName, account: accName, month: month, year: year,
+        exp: p.exp, strike: p.strike, qty: p.qty,
+        tradePrice: tradePrice, markPrice: markPrice, pnl: pnl, costBasis: costBasis,
+        netPnl: pnl, pnlPct: costBasis > 0 ? pnl/costBasis*100 : null,
+        isShort: isShort, isPut: !!(p.isShortPut || p.isLongPut),
+        dte: dte(p.exp),
+      };
+    }).filter(Boolean);
+  }, [positions, livePrice, manualOverrides]);
 
-      // Schwab transactions API max range is 1 year
-      const from = new Date(fromDate);
-      const to = new Date(toDate);
-      const maxFrom = new Date(to);
-      maxFrom.setFullYear(maxFrom.getFullYear() - 1);
-      const effectiveFrom = from < maxFrom ? maxFrom : from;
-      const effectiveFromStr = effectiveFrom.toISOString().slice(0,10);
-      if (from < maxFrom) setLoadMsg("Note: Schwab limits history to 1 year. Fetching from " + effectiveFromStr + "...");
+  const filtered = useMemo(function() {
+    return unrealizedRows.filter(function(r) {
+      if (filterAccount !== "All" && r.account !== filterAccount) return false;
+      if (filterStrategy !== "All" && r.stratName !== filterStrategy) return false;
+      if (filterType === "Short Puts" && !(r.isShort && r.isPut)) return false;
+      if (filterType === "Long Puts" && !(!r.isShort && r.isPut)) return false;
+      if (filterType === "Calls" && r.isPut) return false;
+      return true;
+    });
+  }, [unrealizedRows, filterAccount, filterStrategy, filterType]);
 
-      let allTx = [];
-      let count = 0;
-      for (const acc of accounts) {
-        setLoadMsg("Fetching transactions for account " + (++count) + " of " + accounts.length + "...");
-        try {
-          const txResp = await fetch(
-            "https://api.schwabapi.com/trader/v1/accounts/" + acc.hashValue + "/transactions?startDate=" + effectiveFromStr + "T00:00:00.000Z&endDate=" + toDate + "T23:59:59.999Z",
-            { headers: { "Authorization": "Bearer " + schwabTokens.accessToken } }
-          );
-          if (!txResp.ok) {
-            const errText = await txResp.text();
-            console.warn("TX fetch failed for account", acc.accountNumber, txResp.status, errText);
-            continue;
-          }
-          const txData = await txResp.json();
-          console.log("TX data for account", acc.accountNumber, ":", JSON.stringify(txData).slice(0, 200));
-          const txList = Array.isArray(txData) ? txData : [];
-
-          txList.forEach(tx => {
-            const ti = tx.transferItems || [];
-            ti.forEach(item => {
-              const inst = item.instrument || {};
-              const isOption = inst.assetType === "OPTION";
-              const isEquity = inst.assetType === "EQUITY";
-              const isCash = inst.assetType === "CASH_EQUIVALENT" || tx.type === "DIVIDEND" || tx.type === "INTEREST";
-
-              if (!isOption && !isEquity && !isCash) return;
-
-              const qty = parseFloat(item.amount) || 0;
-              const price = parseFloat(item.price) || 0;
-              const cost = parseFloat(item.cost) || 0;
-              const fees = parseFloat(tx.fees || 0);
-
-              let putCall = null;
-              let strike = null;
-              let expiry = null;
-              let underlyingSymbol = inst.symbol || "";
-
-              if (isOption) {
-                putCall = inst.putCall || null;
-                strike = parseFloat(inst.strikePrice) || null;
-                expiry = inst.expirationDate || null;
-                underlyingSymbol = inst.underlyingSymbol || inst.symbol || "";
-              }
-
-              allTx.push({
-                id: tx.activityId + "_" + (inst.symbol || "cash") + "_" + Math.random(),
-                date: tx.tradeDate || tx.settlementDate || "",
-                account: acc.accountNumber,
-                accountNick: accountNicknames[acc.accountNumber] || acc.accountNumber,
-                symbol: underlyingSymbol || inst.symbol || "",
-                description: inst.description || tx.description || "",
-                type: tx.type || "",
-                assetType: inst.assetType || "CASH",
-                putCall,
-                strike,
-                expiry,
-                qty,
-                price,
-                cost,
-                fees: isOption ? fees : 0,
-                netAmount: parseFloat(tx.netAmount) || 0,
-                isOption,
-                isEquity,
-                isCash,
-                dte: expiry ? Math.round((new Date(expiry) - new Date()) / 86400000) : 0,
-              });
-            });
-          });
-        } catch(e) { console.warn("Account tx error:", e); }
-      }
-
-      setTransactions(allTx);
-      setLoadMsg("");
-      if (allTx.length === 0) setError("No transactions found for the selected date range.");
-    } catch(e) { setError("⚠ " + e.message); setLoadMsg(""); }
-    setLoading(false);
-  };
-
-  // Accounts and strategies for filters
-  const accounts = useMemo(() => ["All", ...new Set((transactions || []).map(t => t.accountNick || t.account).filter(Boolean))], [transactions]);
-  const strategyNames = useMemo(() => ["All", ...(strategies || []).map(s => s.name), "Unallocated"], [strategies]);
-
-  // Filtered transactions
-  const filtered = useMemo(() => transactions.filter(tx => {
-    if (filterAccount !== "All" && (tx.accountNick || tx.account) !== filterAccount) return false;
-    const strat = inferStrategy(tx);
-    if (filterStrategy !== "All" && strat !== filterStrategy) return false;
-    if (filterType === "Options" && !tx.isOption) return false;
-    if (filterType === "Equity" && !tx.isEquity) return false;
-    if (filterType === "Cash" && !tx.isCash) return false;
-    return true;
-  }), [transactions, filterAccount, filterStrategy, filterType, manualOverrides]);
-
-  // Unrealized P&L from open positions
-  const unrealizedRows = useMemo(() => (positions || []).map(p => {
-    const price = (livePrice || {})[p.symbol];
-    if (!price) return null;
-    const markVal = price * Math.abs(p.qty) * 100;
-    const costBasis = (p.tradePrice || 0) * Math.abs(p.qty) * 100;
-    const pnl = p.qty < 0 ? costBasis - markVal : markVal - costBasis;
-    const strat = (strategies || []).find(s => s.id === getStrategy(p));
-    const stratName = (strat && strat.name) || "Unallocated";
-    return {
-      id: p.id,
-      date: p.exp || "",
-      account: accountNicknames[p.account] || p.account || "",
-      symbol: p.symbol,
-      description: p.exp + " $" + p.strike + " " + (p.isShortPut||p.isLongPut?"Put":"Call"),
-      type: "Unrealized",
-      stratName,
-      qty: p.qty,
-      price: price,
-      cost: costBasis,
-      pnl,
-      fees: 0,
-      netPnl: pnl,
-      pnlPct: costBasis > 0 ? pnl/costBasis*100 : null,
-    };
-  }).filter(Boolean), [positions, livePrice]);
-
-  // Realized P&L from transactions
-  const realizedRows = useMemo(() => filtered.map(tx => {
-    const stratName = inferStrategy(tx) || "Unallocated";
-    const pnl = tx.netAmount;
-    const cost = Math.abs(tx.cost) || Math.abs(tx.qty * tx.price * (tx.isOption ? 100 : 1));
-    return {
-      id: tx.id,
-      date: tx.date ? tx.date.slice(0,10) : "",
-      account: tx.accountNick || tx.account,
-      symbol: tx.symbol,
-      description: tx.description,
-      type: tx.type,
-      stratName,
-      qty: tx.qty,
-      price: tx.price,
-      cost,
-      pnl,
-      fees: tx.fees,
-      netPnl: pnl - tx.fees,
-      pnlPct: cost > 0 ? pnl/cost*100 : null,
-      isOption: tx.isOption,
-    };
-  }), [filtered, manualOverrides]);
-
-  // Combined for summary
-  const allRows = useMemo(() => [...realizedRows, ...unrealizedRows], [realizedRows, unrealizedRows]);
-  const totalRealized = realizedRows.reduce((s,r) => s + r.pnl, 0);
-  const totalUnrealized = unrealizedRows.reduce((s,r) => s + r.pnl, 0);
-  const totalFees = realizedRows.reduce((s,r) => s + r.fees, 0);
-  const totalNet = totalRealized + totalUnrealized - totalFees;
-
-  // Grouping
-  const grouped = useMemo(() => {
+  const grouped = useMemo(function() {
     const map = {};
-    allRows.forEach(r => {
-      let key;
-      if (groupBy === "symbol") key = r.symbol || "Unknown";
-      else if (groupBy === "month") key = r.date ? r.date.slice(0,7) : "Unknown";
-      else if (groupBy === "year") key = r.date ? r.date.slice(0,4) : "Unknown";
-      else if (groupBy === "account") key = r.account || "Unknown";
-      else if (groupBy === "strategy") key = r.stratName || "Unallocated";
-      else key = r.symbol;
-
-      if (!map[key]) map[key] = { key, rows: [], pnl: 0, fees: 0, netPnl: 0 };
+    filtered.forEach(function(r) {
+      const key = groupBy === "symbol" ? r.symbol : groupBy === "month" ? r.month : groupBy === "year" ? r.year : groupBy === "account" ? r.account : r.stratName;
+      if (!map[key]) map[key] = { key: key, rows: [], pnl: 0, netPnl: 0, costBasis: 0 };
       map[key].rows.push(r);
       map[key].pnl += r.pnl || 0;
-      map[key].fees += r.fees || 0;
       map[key].netPnl += r.netPnl || 0;
+      map[key].costBasis += r.costBasis || 0;
     });
-    return Object.values(map).sort((a,b) => b.netPnl - a.netPnl);
-  }, [allRows, groupBy]);
+    return Object.values(map).sort(function(a, b) {
+      if (sortKey === "key") return sortDir === "asc" ? a.key.localeCompare(b.key) : b.key.localeCompare(a.key);
+      return sortDir === "asc" ? (a[sortKey]||0)-(b[sortKey]||0) : (b[sortKey]||0)-(a[sortKey]||0);
+    });
+  }, [filtered, groupBy, sortKey, sortDir]);
 
-  const pnlColor = (v) => v >= 0 ? "#06d6a0" : "#ff4d6d";
+  const totalPnl = filtered.reduce(function(s,r) { return s+r.pnl; }, 0);
+  const winners = filtered.filter(function(r) { return r.pnl > 0; }).length;
+  const losers = filtered.filter(function(r) { return r.pnl < 0; }).length;
+
+  const accountOptions = useMemo(function() {
+    return ["All"].concat([...new Set((positions||[]).map(function(p) { return (accountNicknames||{})[p.account]||p.account; }).filter(Boolean))]);
+  }, [positions, accountNicknames]);
+
+  const strategyOptions = useMemo(function() {
+    return ["All"].concat((strategies||[]).map(function(s) { return s.name; })).concat(["Unallocated"]);
+  }, [strategies]);
+
+  const pnlColor = function(v) { return v >= 0 ? "#06d6a0" : "#ff4d6d"; };
+  const handleSort = function(k) {
+    if (sortKey === k) setSortDir(function(d) { return d === "asc" ? "desc" : "asc"; });
+    else { setSortKey(k); setSortDir("desc"); }
+  };
+  const arrow = function(k) { return sortKey===k ? (sortDir==="asc"?" ▲":" ▼") : ""; };
 
   return (
     <div>
-      {/* Summary Cards */}
       <div style={{ ...S.summaryRow, gap: 10, marginBottom: 16 }}>
-        <div style={{ ...S.card, flex: "1 1 120px", borderTop: "3px solid #06d6a0", padding: "10px 14px" }}>
-          <div style={{ fontSize: 16, fontWeight: 700, color: pnlColor(totalRealized) }}>{totalRealized >= 0 ? "+" : ""}{fmt$(totalRealized)}</div>
-          <div style={{ fontSize: 10, color: "#888" }}>Realized P&L</div>
+        <div style={{ ...S.card, flex:"1 1 120px", borderTop:"3px solid "+pnlColor(totalPnl), padding:"10px 14px" }}>
+          <div style={{ fontSize:18, fontWeight:700, color:pnlColor(totalPnl) }}>{totalPnl>=0?"+":""}{fmt$(totalPnl)}</div>
+          <div style={{ fontSize:10, color:"#888" }}>Unrealized P&L</div>
         </div>
-        <div style={{ ...S.card, flex: "1 1 120px", borderTop: "3px solid #4cc9f0", padding: "10px 14px" }}>
-          <div style={{ fontSize: 16, fontWeight: 700, color: pnlColor(totalUnrealized) }}>{totalUnrealized >= 0 ? "+" : ""}{fmt$(totalUnrealized)}</div>
-          <div style={{ fontSize: 10, color: "#888" }}>Unrealized P&L</div>
+        <div style={{ ...S.card, flex:"1 1 100px", borderTop:"3px solid #06d6a0", padding:"10px 14px" }}>
+          <div style={{ fontSize:18, fontWeight:700, color:"#06d6a0" }}>{winners}</div>
+          <div style={{ fontSize:10, color:"#888" }}>Winning</div>
         </div>
-        <div style={{ ...S.card, flex: "1 1 120px", borderTop: "3px solid #ff9f1c", padding: "10px 14px" }}>
-          <div style={{ fontSize: 16, fontWeight: 700, color: "#ff9f1c" }}>-{fmt$(totalFees)}</div>
-          <div style={{ fontSize: 10, color: "#888" }}>Total Fees</div>
+        <div style={{ ...S.card, flex:"1 1 100px", borderTop:"3px solid #ff4d6d", padding:"10px 14px" }}>
+          <div style={{ fontSize:18, fontWeight:700, color:"#ff4d6d" }}>{losers}</div>
+          <div style={{ fontSize:10, color:"#888" }}>Losing</div>
         </div>
-        <div style={{ ...S.card, flex: "1 1 120px", borderTop: "3px solid #ffd166", padding: "10px 14px" }}>
-          <div style={{ fontSize: 18, fontWeight: 700, color: pnlColor(totalNet) }}>{totalNet >= 0 ? "+" : ""}{fmt$(totalNet)}</div>
-          <div style={{ fontSize: 10, color: "#888" }}>Net Total P&L</div>
+        <div style={{ ...S.card, flex:"1 1 100px", borderTop:"3px solid #ffd166", padding:"10px 14px" }}>
+          <div style={{ fontSize:16, fontWeight:700, color:"#ffd166" }}>{filtered.length}</div>
+          <div style={{ fontSize:10, color:"#888" }}>Positions</div>
         </div>
       </div>
 
-      {/* Filters */}
-      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end", marginBottom: 14 }}>
-        <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-          <div style={{ fontSize: 10, color: "#666", textTransform: "uppercase", letterSpacing: 0.8 }}>From</div>
-          <input type="date" value={fromDate} onChange={e => setFromDate(e.target.value)} style={{ ...S.input, fontSize: 12 }} />
-        </div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-          <div style={{ fontSize: 10, color: "#666", textTransform: "uppercase", letterSpacing: 0.8 }}>To</div>
-          <input type="date" value={toDate} onChange={e => setToDate(e.target.value)} style={{ ...S.input, fontSize: 12 }} />
-        </div>
-        <button onClick={loadTransactions} disabled={loading}
-          style={{ ...S.saveBtn, padding: "8px 18px", fontSize: 12, opacity: loading ? 0.6 : 1, alignSelf: "flex-end" }}>
-          {loading ? loadMsg || "Loading..." : "📥 Load from Schwab"}
-        </button>
-        <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-          <div style={{ fontSize: 10, color: "#666", textTransform: "uppercase", letterSpacing: 0.8 }}>Group By</div>
-          <select value={groupBy} onChange={e => setGroupBy(e.target.value)} style={S.sortSelect}>
+      <div style={{ display:"flex", gap:10, flexWrap:"wrap", alignItems:"flex-end", marginBottom:14 }}>
+        <div style={{ display:"flex", flexDirection:"column", gap:3 }}>
+          <div style={{ fontSize:10, color:"#666", textTransform:"uppercase", letterSpacing:0.8 }}>Group By</div>
+          <select value={groupBy} onChange={function(e){setGroupBy(e.target.value);}} style={S.sortSelect}>
             <option value="symbol">Symbol</option>
             <option value="month">Month</option>
             <option value="year">Year</option>
@@ -2738,100 +2574,132 @@ function PnLTab({ positions = [], livePrice = {}, strategies = [], getStrategy, 
             <option value="strategy">Strategy</option>
           </select>
         </div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-          <div style={{ fontSize: 10, color: "#666", textTransform: "uppercase", letterSpacing: 0.8 }}>Account</div>
-          <select value={filterAccount} onChange={e => setFilterAccount(e.target.value)} style={S.sortSelect}>
-            {accounts.map(a => <option key={a} value={a}>{a}</option>)}
+        <div style={{ display:"flex", flexDirection:"column", gap:3 }}>
+          <div style={{ fontSize:10, color:"#666", textTransform:"uppercase", letterSpacing:0.8 }}>Account</div>
+          <select value={filterAccount} onChange={function(e){setFilterAccount(e.target.value);}} style={S.sortSelect}>
+            {accountOptions.map(function(a) { return <option key={a} value={a}>{a}</option>; })}
           </select>
         </div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-          <div style={{ fontSize: 10, color: "#666", textTransform: "uppercase", letterSpacing: 0.8 }}>Strategy</div>
-          <select value={filterStrategy} onChange={e => setFilterStrategy(e.target.value)} style={S.sortSelect}>
-            {strategyNames.map(s => <option key={s} value={s}>{s}</option>)}
+        <div style={{ display:"flex", flexDirection:"column", gap:3 }}>
+          <div style={{ fontSize:10, color:"#666", textTransform:"uppercase", letterSpacing:0.8 }}>Strategy</div>
+          <select value={filterStrategy} onChange={function(e){setFilterStrategy(e.target.value);}} style={S.sortSelect}>
+            {strategyOptions.map(function(s) { return <option key={s} value={s}>{s}</option>; })}
           </select>
         </div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-          <div style={{ fontSize: 10, color: "#666", textTransform: "uppercase", letterSpacing: 0.8 }}>Type</div>
-          <select value={filterType} onChange={e => setFilterType(e.target.value)} style={S.sortSelect}>
+        <div style={{ display:"flex", flexDirection:"column", gap:3 }}>
+          <div style={{ fontSize:10, color:"#666", textTransform:"uppercase", letterSpacing:0.8 }}>Type</div>
+          <select value={filterType} onChange={function(e){setFilterType(e.target.value);}} style={S.sortSelect}>
             <option value="All">All</option>
-            <option value="Options">Options</option>
-            <option value="Equity">Equity</option>
-            <option value="Cash">Dividends/Interest</option>
+            <option value="Short Puts">Short Puts</option>
+            <option value="Long Puts">Long Puts</option>
+            <option value="Calls">Calls</option>
           </select>
         </div>
       </div>
 
-      {error && <div style={{ padding: "10px 14px", background: "rgba(255,77,109,0.08)", border: "1px solid rgba(255,77,109,0.2)", borderRadius: 8, color: "#ff4d6d", fontSize: 12, marginBottom: 14 }}>{error}</div>}
+      {error && <div style={{ padding:"10px 14px", background:"rgba(255,77,109,0.08)", border:"1px solid rgba(255,77,109,0.2)", borderRadius:8, color:"#ff4d6d", fontSize:12, marginBottom:14 }}>{error}</div>}
 
-      {/* Grouped Summary */}
-      {grouped.length > 0 && (
-        <div style={{ marginBottom: 20 }}>
-          <div style={{ ...S.sectionHeader, marginBottom: 10 }}>
-            <span style={{ fontSize: 13, fontWeight: 700 }}>P&L by {groupBy.charAt(0).toUpperCase() + groupBy.slice(1)}</span>
-            <span style={{ fontSize: 11, color: "#666" }}>{grouped.length} groups</span>
-          </div>
-          <div style={S.tableWrap}>
-            <table style={S.table}>
-              <thead>
-                <tr>
-                  <th style={S.th}>{groupBy.charAt(0).toUpperCase() + groupBy.slice(1)}</th>
-                  <th style={{ ...S.th, textAlign: "right" }}>Trades</th>
-                  <th style={{ ...S.th, textAlign: "right" }}>Gross P&L</th>
-                  <th style={{ ...S.th, textAlign: "right" }}>Fees</th>
-                  <th style={{ ...S.th, textAlign: "right" }}>Net P&L</th>
-                  <th style={{ ...S.th, textAlign: "right" }}>% Return</th>
-                  <th style={{ ...S.th }}>Strategy</th>
+      <div style={{ ...S.sectionHeader, marginBottom:10 }}>
+        <span style={{ fontSize:13, fontWeight:700 }}>P&L by {groupBy.charAt(0).toUpperCase()+groupBy.slice(1)}</span>
+        <span style={{ fontSize:11, color:"#666" }}>{grouped.length} groups · click a row to expand</span>
+      </div>
+      <div style={S.tableWrap}>
+        <table style={S.table}>
+          <thead>
+            <tr>
+              <th style={{ ...S.th, cursor:"pointer" }} onClick={function(){handleSort("key");}}>
+                {groupBy.charAt(0).toUpperCase()+groupBy.slice(1)}{arrow("key")}
+              </th>
+              <th style={{ ...S.th, textAlign:"right" }}>Positions</th>
+              <th style={{ ...S.th, textAlign:"right", cursor:"pointer" }} onClick={function(){handleSort("pnl");}}>P&L{arrow("pnl")}</th>
+              <th style={{ ...S.th, textAlign:"right" }}>% Return</th>
+              <th style={{ ...S.th }}>Strategy</th>
+              <th style={{ ...S.th, width:30 }}></th>
+            </tr>
+          </thead>
+          <tbody>
+            {grouped.map(function(g, i) {
+              const pct = g.costBasis > 0 ? g.netPnl/g.costBasis*100 : null;
+              const isExp = expandedKey === g.key;
+              const stratName = (g.rows[0] && g.rows[0].stratName) || "";
+              const rows = [
+                <tr key={g.key+"_r"}
+                  onClick={function(){ setExpandedKey(isExp ? null : g.key); }}
+                  style={{ background: isExp ? "rgba(76,201,240,0.06)" : i%2===0?"rgba(255,255,255,0.02)":"transparent", cursor:"pointer" }}>
+                  <td style={{ ...S.td, fontWeight:700, color:"#f0f0f0" }}>{g.key}</td>
+                  <td style={{ ...S.td, textAlign:"right", color:"#888" }}>{g.rows.length}</td>
+                  <td style={{ ...S.td, textAlign:"right", fontWeight:700, color:pnlColor(g.pnl) }}>{g.pnl>=0?"+":""}{fmt$(g.pnl)}</td>
+                  <td style={{ ...S.td, textAlign:"right", color:pct!=null?pnlColor(pct):"#888" }}>{pct!=null?(pct>=0?"+":"")+pct.toFixed(1)+"%":"—"}</td>
+                  <td style={{ ...S.td }}>
+                    <select value={stratName}
+                      onClick={function(e){e.stopPropagation();}}
+                      onChange={function(e){
+                        e.stopPropagation();
+                        const ov = Object.assign({}, manualOverrides);
+                        g.rows.forEach(function(r){ ov[r.symbol] = e.target.value; });
+                        setManualOverrides(ov);
+                      }}
+                      style={{ ...S.sortSelect, fontSize:10, padding:"2px 6px" }}>
+                      {(strategies||[]).map(function(s){ return <option key={s.id} value={s.name}>{s.name}</option>; })}
+                      <option value="Unallocated">Unallocated</option>
+                    </select>
+                  </td>
+                  <td style={{ ...S.td, textAlign:"center", color:"#555", fontSize:11 }}>{isExp?"▲":"▼"}</td>
                 </tr>
-              </thead>
-              <tbody>
-                {grouped.map((g, i) => {
-                  const totalCost = g.rows.reduce((s,r) => s + Math.abs(r.cost||0), 0);
-                  const pctReturn = totalCost > 0 ? g.netPnl / totalCost * 100 : null;
-                  const strat = g.rows[0]?.stratName || "";
-                  return (
-                    <tr key={g.key} style={{ background: i%2===0?"rgba(255,255,255,0.02)":"transparent" }}>
-                      <td style={{ ...S.td, fontWeight: 700, color: "#f0f0f0" }}>{g.key}</td>
-                      <td style={{ ...S.td, textAlign: "right", color: "#888" }}>{g.rows.length}</td>
-                      <td style={{ ...S.td, textAlign: "right", color: pnlColor(g.pnl), fontWeight: 600 }}>{g.pnl >= 0 ? "+" : ""}{fmt$(g.pnl)}</td>
-                      <td style={{ ...S.td, textAlign: "right", color: "#ff9f1c" }}>{g.fees > 0 ? "-" + fmt$(g.fees) : "—"}</td>
-                      <td style={{ ...S.td, textAlign: "right", fontWeight: 700, color: pnlColor(g.netPnl) }}>{g.netPnl >= 0 ? "+" : ""}{fmt$(g.netPnl)}</td>
-                      <td style={{ ...S.td, textAlign: "right", color: pctReturn != null ? pnlColor(pctReturn) : "#888" }}>
-                        {pctReturn != null ? (pctReturn >= 0 ? "+" : "") + pctReturn.toFixed(1) + "%" : "—"}
-                      </td>
-                      <td style={{ ...S.td, color: "#888", fontSize: 11 }}>
-                        <select value={strat} onChange={e => {
-                          const newOverrides = { ...manualOverrides };
-                          g.rows.forEach(r => { newOverrides[r.id] = e.target.value; });
-                          setManualOverrides(newOverrides);
-                        }} style={{ ...S.sortSelect, fontSize: 10, padding: "2px 6px" }}>
-                          {(strategyNames || []).filter(s => s !== "All").map(s => <option key={s} value={s}>{s}</option>)}
-                        </select>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {/* Unrealized positions — only show when transactions are loaded too */}
-      {unrealizedRows.length > 0 && transactions.length === 0 && (
-        <div style={{ padding: "16px 20px", background: "rgba(76,201,240,0.06)", border: "1px solid rgba(76,201,240,0.2)", borderRadius: 10, marginTop: 16 }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: "#4cc9f0", marginBottom: 6 }}>Load Transaction History First</div>
-          <div style={{ fontSize: 12, color: "#888", lineHeight: 1.7 }}>
-            Click <strong style={{ color: "#4cc9f0" }}>📥 Load from Schwab</strong> above to load your transaction history. Once loaded, you will see accurate realized and unrealized P&L combined.
-          </div>
-          <div style={{ fontSize: 11, color: "#666", marginTop: 8 }}>
-            Note: Showing unrealized P&L without transaction history produces inaccurate numbers for short options strategies.
-          </div>
-        </div>
-      )}
+              ];
+              if (isExp) {
+                rows.push(
+                  <tr key={g.key+"_d"}>
+                    <td colSpan={6} style={{ padding:0, background:"rgba(76,201,240,0.03)" }}>
+                      <table style={{ ...S.table, margin:0, borderRadius:0 }}>
+                        <thead>
+                          <tr style={{ background:"rgba(255,255,255,0.04)" }}>
+                            <th style={{ ...S.th, fontSize:10 }}>Position</th>
+                            <th style={{ ...S.th, fontSize:10 }}>Strategy</th>
+                            <th style={{ ...S.th, fontSize:10 }}>Account</th>
+                            <th style={{ ...S.th, fontSize:10, textAlign:"right" }}>DTE</th>
+                            <th style={{ ...S.th, fontSize:10, textAlign:"right" }}>Qty</th>
+                            <th style={{ ...S.th, fontSize:10, textAlign:"right" }}>Trade Px</th>
+                            <th style={{ ...S.th, fontSize:10, textAlign:"right" }}>Mark</th>
+                            <th style={{ ...S.th, fontSize:10, textAlign:"right" }}>P&L</th>
+                            <th style={{ ...S.th, fontSize:10, textAlign:"right" }}>% Return</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {g.rows.sort(function(a,b){return b.pnl-a.pnl;}).map(function(r, j) {
+                            return (
+                              <tr key={r.id} style={{ background: j%2===0?"rgba(255,255,255,0.02)":"transparent" }}>
+                                <td style={{ ...S.td, color:"#ccc", fontSize:11, paddingLeft:20 }}>{r.description}</td>
+                                <td style={{ ...S.td, color:"#888", fontSize:11 }}>{r.stratName}</td>
+                                <td style={{ ...S.td, color:"#888", fontSize:11 }}>{r.account}</td>
+                                <td style={{ ...S.td, textAlign:"right", color:"#888", fontSize:11 }}>{r.dte != null ? r.dte : "—"}</td>
+                                <td style={{ ...S.td, textAlign:"right", color:r.isShort?"#ff9f1c":"#4cc9f0", fontSize:11 }}>{r.qty}</td>
+                                <td style={{ ...S.td, textAlign:"right", color:"#888", fontSize:11 }}>${r.tradePrice.toFixed(2)}</td>
+                                <td style={{ ...S.td, textAlign:"right", color:"#ccc", fontSize:11 }}>${r.markPrice.toFixed(2)}</td>
+                                <td style={{ ...S.td, textAlign:"right", fontWeight:700, fontSize:11, color:pnlColor(r.pnl) }}>{r.pnl>=0?"+":""}{fmt$(r.pnl)}</td>
+                                <td style={{ ...S.td, textAlign:"right", fontSize:11, color:r.pnlPct!=null?pnlColor(r.pnlPct):"#888" }}>{r.pnlPct!=null?(r.pnlPct>=0?"+":"")+r.pnlPct.toFixed(1)+"%":"—"}</td>
+                              </tr>
+                            );
+                          })}
+                          <tr style={{ borderTop:"1px solid rgba(255,255,255,0.1)" }}>
+                            <td colSpan={7} style={{ ...S.td, color:"#888", fontSize:11, paddingLeft:20 }}>Total</td>
+                            <td style={{ ...S.td, textAlign:"right", fontWeight:700, color:pnlColor(g.pnl) }}>{g.pnl>=0?"+":""}{fmt$(g.pnl)}</td>
+                            <td style={{ ...S.td, textAlign:"right", color:pct!=null?pnlColor(pct):"#888" }}>{pct!=null?(pct>=0?"+":"")+pct.toFixed(1)+"%":"—"}</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </td>
+                  </tr>
+                );
+              }
+              return rows;
+            })}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
-
 
 function PositionsTab({ positions = [], livePrice = {}, industry = {}, strategies = [], getStrategy, decisions = {}, saveDecision, accountNicknames = {}, alerts = [], excludedStrategyIds = new Set() }) {
   const [sortKey, setSortKey] = useState("plPct");
