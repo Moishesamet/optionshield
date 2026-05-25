@@ -5004,11 +5004,17 @@ function ImportTab({ onUpload, onClear, onClearPositions, onExport, onRestore, o
       const accounts = await accResp.json();
       if (!accounts.length) throw new Error("No accounts found.");
 
-      const MONTHS = { JAN:0,FEB:1,MAR:2,APR:3,MAY:4,JUN:5,JUL:6,AUG:7,SEP:8,OCT:9,NOV:10,DEC:11 };
+      const parseOptionSymbol = (desc, symbol, inst) => {
+        const MONTHS = { JAN:0,FEB:1,MAR:2,APR:3,MAY:4,JUN:5,JUL:6,AUG:7,SEP:8,OCT:9,NOV:10,DEC:11 };
+        const monNames = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
 
-      const parseOptionSymbol = (desc, symbol) => {
-        // Schwab description format: "AAPL 01/17/2025 150.00 C" or "SPY Jan 17 2025 500 Put"
-        // Also handle: "100 (Weeklys) 22 MAY 26 22 CALL"
+        // Try Schwab instrument fields directly first (most reliable)
+        if (inst && inst.expirationDate && inst.strikePrice && inst.putCall) {
+          const d = new Date(inst.expirationDate);
+          const expStr = String(d.getDate()).padStart(2,'0') + ' ' + monNames[d.getMonth()] + ' ' + d.getFullYear();
+          return { exp: expStr, strike: parseFloat(inst.strikePrice), type: inst.putCall.toUpperCase() };
+        }
+
         if (!desc) return null;
 
         // Try format: "DD MON YY strike TYPE"
@@ -5016,27 +5022,30 @@ function ImportTab({ onUpload, onClear, onClearPositions, onExport, onRestore, o
         if (m) {
           const day = parseInt(m[1]);
           const mon = MONTHS[m[2].toUpperCase()];
-          let yr = parseInt(m[3]);
-          if (yr < 100) yr += 2000;
-          const strike = parseFloat(m[4]);
-          const type = m[5].toUpperCase();
+          let yr = parseInt(m[3]); if (yr < 100) yr += 2000;
           const expStr = String(day).padStart(2,'0') + ' ' + m[2].toUpperCase() + ' ' + yr;
-          return { exp: expStr, strike, type };
+          return { exp: expStr, strike: parseFloat(m[4]), type: m[5].toUpperCase() };
         }
 
         // Try format: "MM/DD/YYYY strike C/P"
         m = desc.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})\s+([\d.]+)\s+([CP])/i);
         if (m) {
-          const mon = parseInt(m[1]) - 1;
-          const day = parseInt(m[2]);
-          const yr = parseInt(m[3]);
-          const strike = parseFloat(m[4]);
-          const type = m[5].toUpperCase() === 'C' ? 'CALL' : 'PUT';
-          const monNames = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
-          const expStr = String(day).padStart(2,'0') + ' ' + monNames[mon] + ' ' + yr;
-          return { exp: expStr, strike, type };
+          const expStr = String(parseInt(m[2])).padStart(2,'0') + ' ' + monNames[parseInt(m[1])-1] + ' ' + m[3];
+          return { exp: expStr, strike: parseFloat(m[4]), type: m[5].toUpperCase() === 'C' ? 'CALL' : 'PUT' };
         }
 
+        // Try OCC symbol format: "SPY 250117C00500000"
+        m = symbol.match(/([A-Z]+)\s*(\d{6})([CP])(\d{8})/);
+        if (m) {
+          const yr = 2000 + parseInt(m[2].slice(0,2));
+          const mon = parseInt(m[2].slice(2,4)) - 1;
+          const day = parseInt(m[2].slice(4,6));
+          const strike = parseInt(m[4]) / 1000;
+          const expStr = String(day).padStart(2,'0') + ' ' + monNames[mon] + ' ' + yr;
+          return { exp: expStr, strike, type: m[3] === 'C' ? 'CALL' : 'PUT' };
+        }
+
+        console.warn("Could not parse option:", desc, symbol);
         return null;
       };
 
@@ -5058,7 +5067,7 @@ function ImportTab({ onUpload, onClear, onClearPositions, onExport, onRestore, o
 
           const desc = inst.description || "";
           const underlyingSymbol = inst.underlyingSymbol || inst.symbol || "";
-          const parsed = parseOptionSymbol(desc, underlyingSymbol);
+          const parsed = parseOptionSymbol(desc, underlyingSymbol, inst);
           if (!parsed) return;
 
           const longQty = parseFloat(p.longQuantity) || 0;
