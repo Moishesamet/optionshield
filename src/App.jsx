@@ -1181,7 +1181,7 @@ export default function App() {
   const refreshSchwabToken = useCallback(async () => {
     if (!schwabTokens || !schwabTokens.refreshToken) return;
     const timeLeft = schwabTokens.expiresAt - Date.now();
-    if (timeLeft > 5 * 60 * 1000) return; // More than 5 min left, no need
+    if (timeLeft > 5 * 60 * 1000) return;
     try {
       const creds = btoa("Qrl3vl5TEAcT40qO9XjZLGHxbwe0Y2YKj7PwAtZtwYX9qNw2:2x7zXlaqPw7TemGt11OS4a5Wxl5TkdxUG8HALBihVouGMLVZAGgSLnGquAGz9rqo");
       const resp = await fetch("https://api.schwabapi.com/v1/oauth/token", {
@@ -1189,6 +1189,10 @@ export default function App() {
         headers: { "Content-Type": "application/x-www-form-urlencoded", "Authorization": "Basic " + creds },
         body: "grant_type=refresh_token&refresh_token=" + encodeURIComponent(schwabTokens.refreshToken)
       });
+      if (!resp.ok) {
+        console.warn("Token refresh failed with status:", resp.status);
+        return;
+      }
       const data = await resp.json();
       if (data.access_token) {
         const newTokens = {
@@ -1196,10 +1200,11 @@ export default function App() {
           refreshToken: data.refresh_token || schwabTokens.refreshToken,
           expiresAt: Date.now() + ((data.expires_in || 1800) * 1000)
         };
-        await handleSchwabTokens(newTokens);
-        console.log("Schwab token auto-refreshed successfully");
+        setSchwabTokens(newTokens);
+        localStorage.setItem(SK.schwabTokens, JSON.stringify(newTokens));
+        console.log("Schwab token refreshed successfully");
       }
-    } catch(e) { console.warn("Token refresh failed:", e); }
+    } catch(e) { console.warn("Token refresh error:", e); }
   }, [schwabTokens]);
 
   // Check token every 5 minutes
@@ -3361,7 +3366,7 @@ function PositionsTab({ positions, livePrice, industry, strategies, getStrategy,
 // ══════════════════════════════════════════════════════════════════════════════
 // EXPOSURE TAB
 // ══════════════════════════════════════════════════════════════════════════════
-function ExposureTab({ positions, livePrice, industry, strategies, getStrategy, equityHoldings = [], totalEquity = null, symbolRatings = {}, watchlistData = {}, excludedStrategyIds = new Set(), industryOverrides = {} }) {
+function ExposureTab({ positions = [], livePrice = {}, industry = {}, strategies = [], getStrategy, equityHoldings = [], totalEquity = null, symbolRatings = {}, watchlistData = {}, excludedStrategyIds = new Set(), industryOverrides = {} }) {
 
   const getIndustry = (symbol) => industryOverrides[symbol] || (watchlistData[symbol] && watchlistData[symbol].industry) || "";
   const getSubIndustry = (symbol) => (watchlistData[symbol] && watchlistData[symbol].subIndustry) || "";
