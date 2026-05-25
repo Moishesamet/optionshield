@@ -1178,42 +1178,31 @@ export default function App() {
   };
 
   // Auto-refresh Schwab token using refresh token
-  const refreshSchwabToken = useCallback(async () => {
-    if (!schwabTokens || !schwabTokens.refreshToken) return;
-    const timeLeft = schwabTokens.expiresAt - Date.now();
-    if (timeLeft > 5 * 60 * 1000) return;
-    try {
-      const creds = btoa("Qrl3vl5TEAcT40qO9XjZLGHxbwe0Y2YKj7PwAtZtwYX9qNw2:2x7zXlaqPw7TemGt11OS4a5Wxl5TkdxUG8HALBihVouGMLVZAGgSLnGquAGz9rqo");
-      const resp = await fetch("https://api.schwabapi.com/v1/oauth/token", {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded", "Authorization": "Basic " + creds },
-        body: "grant_type=refresh_token&refresh_token=" + encodeURIComponent(schwabTokens.refreshToken)
-      });
-      if (!resp.ok) {
-        console.warn("Token refresh failed with status:", resp.status);
-        return;
-      }
-      const data = await resp.json();
-      if (data.access_token) {
-        const newTokens = {
-          accessToken: data.access_token,
-          refreshToken: data.refresh_token || schwabTokens.refreshToken,
-          expiresAt: Date.now() + ((data.expires_in || 1800) * 1000)
-        };
-        setSchwabTokens(newTokens);
-        localStorage.setItem(SK.schwabTokens, JSON.stringify(newTokens));
-        console.log("Schwab token refreshed successfully");
-      }
-    } catch(e) { console.warn("Token refresh error:", e); }
-  }, [schwabTokens]);
-
-  // Check token every 5 minutes
+  // Auto-refresh Schwab token — only runs if refresh token exists and token expires soon
   useEffect(() => {
-    if (!schwabTokens) return;
-    const interval = setInterval(refreshSchwabToken, 5 * 60 * 1000);
-    refreshSchwabToken(); // Check immediately
+    if (!schwabTokens || !schwabTokens.refreshToken) return;
+    const check = async () => {
+      const timeLeft = schwabTokens.expiresAt - Date.now();
+      if (timeLeft > 5 * 60 * 1000) return;
+      try {
+        const creds = btoa("Qrl3vl5TEAcT40qO9XjZLGHxbwe0Y2YKj7PwAtZtwYX9qNw2:2x7zXlaqPw7TemGt11OS4a5Wxl5TkdxUG8HALBihVouGMLVZAGgSLnGquAGz9rqo");
+        const resp = await fetch("https://api.schwabapi.com/v1/oauth/token", {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded", "Authorization": "Basic " + creds },
+          body: "grant_type=refresh_token&refresh_token=" + encodeURIComponent(schwabTokens.refreshToken)
+        });
+        if (!resp.ok) return; // Silently fail — user will reconnect manually
+        const data = await resp.json();
+        if (data.access_token) {
+          const newTokens = { accessToken: data.access_token, refreshToken: data.refresh_token || schwabTokens.refreshToken, expiresAt: Date.now() + ((data.expires_in || 1800) * 1000) };
+          setSchwabTokens(newTokens);
+          localStorage.setItem(SK.schwabTokens, JSON.stringify(newTokens));
+        }
+      } catch(e) {}
+    };
+    const interval = setInterval(check, 5 * 60 * 1000);
     return () => clearInterval(interval);
-  }, [schwabTokens, refreshSchwabToken]);
+  }, [schwabTokens]);
 
   return (
     <div style={S.root}>
@@ -1276,7 +1265,7 @@ export default function App() {
 // ══════════════════════════════════════════════════════════════════════════════
 // DASHBOARD TAB
 // ══════════════════════════════════════════════════════════════════════════════
-function DashboardTab({ positions, livePrice, strategies, getStrategy, decisions, alerts, totalEquity, symbolRatings, equityHoldings, accountNicknames, setTab, excludedStrategyIds = new Set() }) {
+function DashboardTab({ positions = [], livePrice = {}, strategies = [], getStrategy, decisions = {}, alerts = [], totalEquity = null, symbolRatings = {}, equityHoldings = [], accountNicknames = {}, setTab, excludedStrategyIds = new Set() }) {
   const now = new Date();
 
   // ── Core calculations ──
@@ -2871,7 +2860,7 @@ function PnLTab({ positions = [], livePrice = {}, strategies = [], getStrategy, 
 }
 
 
-function PositionsTab({ positions, livePrice, industry, strategies, getStrategy, decisions, saveDecision, accountNicknames, alerts = [], excludedStrategyIds = new Set() }) {
+function PositionsTab({ positions = [], livePrice = {}, industry = {}, strategies = [], getStrategy, decisions = {}, saveDecision, accountNicknames = {}, alerts = [], excludedStrategyIds = new Set() }) {
   const [sortKey, setSortKey] = useState("plPct");
   const [sortDir, setSortDir] = useState("desc");
   const [typeFilters, setTypeFilters] = useState(new Set(["SHORT_PUT","LONG_PUT","SHORT_CALL","LONG_CALL"]));
@@ -3977,7 +3966,7 @@ function ExposureTab({ positions = [], livePrice = {}, industry = {}, strategies
 }
 
 // ── Equity Holdings Table ─────────────────────────────────────────────────────
-function EquityTable({ holdings, livePrice, watchlistData = {} }) {
+function EquityTable({ holdings = [], livePrice = {}, watchlistData = {} }) {
   const [sortKey, setSortKey] = useState("totalValue");
   const [sortDir, setSortDir] = useState("desc");
   const [expanded, setExpanded] = useState(null);
