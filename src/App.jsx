@@ -2466,7 +2466,7 @@ function PnLTab({ positions = [], livePrice = {}, strategies = [], getStrategy, 
       if (!accResp.ok) throw new Error("Account fetch failed: " + accResp.status);
       const accounts = await accResp.json();
       const to = new Date();
-      const from = new Date(); from.setFullYear(from.getFullYear() - 1);
+      const from = new Date(); from.setFullYear(from.getFullYear() - 1); from.setDate(from.getDate() + 1);
       const fromStr = from.toISOString().slice(0,10);
       const toStr = to.toISOString().slice(0,10);
       let allTx = []; let cnt = 0;
@@ -4248,7 +4248,7 @@ The three indexes are managed independently with expirations laddered across the
                                 placeholder={watchlistIndustry || "Enter industry..."}
                                 style={{ ...S.input, padding: "3px 8px", fontSize: 11,
                                   color: (industryOverrides || {})[sym] ? "#ffd166" : "#aaa",
-                                  borderColor: industryOverrides[sym] ? "rgba(255,213,102,0.3)" : "rgba(255,255,255,0.08)"
+                                  borderColor: (industryOverrides || {})[sym] ? "rgba(255,213,102,0.3)" : "rgba(255,255,255,0.08)"
                                 }}
                               />
                             </td>
