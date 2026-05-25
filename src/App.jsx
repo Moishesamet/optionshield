@@ -525,18 +525,18 @@ export default function App() {
           Promise.resolve({ value: localStorage.getItem(SK.symbolRatings) }),
           Promise.resolve({ value: localStorage.getItem(SK.watchlistData) }),
         ]);
-        try { if (sp && sp.value) setStrategies(JSON.parse(sp.value)); } catch(e) {}
-        try { if (ss && ss.value) setSymbolStrategy(JSON.parse(ss.value)); } catch(e) {}
-        try { if (po && po.value) setPosOverride(JSON.parse(po.value)); } catch(e) {}
-        try { if (ind && ind.value) setIndustry(JSON.parse(ind.value)); } catch(e) {}
-        try { if (an && an.value) setAccountNicknames(JSON.parse(an.value)); } catch(e) {}
-        try { if (pr && pr.value) setLivePrice(JSON.parse(pr.value)); } catch(e) {}
-        try { if (eh && eh.value) setEquityHoldings(JSON.parse(eh.value)); } catch(e) {}
-        try { if (al && al.value) setAlerts(JSON.parse(al.value)); } catch(e) {}
-        try { if (ar && ar.value) setAlertRules(JSON.parse(ar.value)); } catch(e) {}
-        try { if (te && te.value) setTotalEquity(JSON.parse(te.value)); } catch(e) {}
-        try { if (sr && sr.value) setSymbolRatings(JSON.parse(sr.value)); } catch(e) {}
-        try { if (wd && wd.value) setWatchlistData(JSON.parse(wd.value)); } catch(e) {}
+        try { if (sp && sp.value) setStrategies(JSON.parse(sp.value) || DEFAULT_STRATEGIES); } catch(e) {}
+        try { if (ss && ss.value) setSymbolStrategy(JSON.parse(ss.value) || {}); } catch(e) {}
+        try { if (po && po.value) setPosOverride(JSON.parse(po.value) || {}); } catch(e) {}
+        try { if (ind && ind.value) setIndustry(JSON.parse(ind.value) || {}); } catch(e) {}
+        try { if (an && an.value) setAccountNicknames(JSON.parse(an.value) || {}); } catch(e) {}
+        try { if (pr && pr.value) setLivePrice(JSON.parse(pr.value) || {}); } catch(e) {}
+        try { if (eh && eh.value) setEquityHoldings(JSON.parse(eh.value) || []); } catch(e) {}
+        try { if (al && al.value) setAlerts(JSON.parse(al.value) || []); } catch(e) {}
+        try { if (ar && ar.value) setAlertRules(JSON.parse(ar.value) || []); } catch(e) {}
+        try { if (te && te.value) setTotalEquity(JSON.parse(te.value) || null); } catch(e) {}
+        try { if (sr && sr.value) setSymbolRatings(JSON.parse(sr.value) || {}); } catch(e) {}
+        try { if (wd && wd.value) setWatchlistData(JSON.parse(wd.value) || {}); } catch(e) {}
         try {
           const io = { value: localStorage.getItem("opts:industryOverrides") };
           if (io) setIndustryOverrides(JSON.parse(io.value));
