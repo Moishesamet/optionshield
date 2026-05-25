@@ -539,7 +539,7 @@ export default function App() {
         try { if (wd && wd.value) setWatchlistData(JSON.parse(wd.value) || {}); } catch(e) {}
         try {
           const io = { value: localStorage.getItem("opts:industryOverrides") };
-          if (io) setIndustryOverrides(JSON.parse(io.value));
+          if (io && io.value) setIndustryOverrides(JSON.parse(io.value) || {});
         } catch(e) {}
         try {
           const lb = { value: localStorage.getItem(SK.lastBackup) };
@@ -3357,8 +3357,8 @@ function PositionsTab({ positions = [], livePrice = {}, industry = {}, strategie
 // ══════════════════════════════════════════════════════════════════════════════
 function ExposureTab({ positions = [], livePrice = {}, industry = {}, strategies = [], getStrategy, equityHoldings = [], totalEquity = null, symbolRatings = {}, watchlistData = {}, excludedStrategyIds = new Set(), industryOverrides = {} }) {
 
-  const getIndustry = (symbol) => industryOverrides[symbol] || (watchlistData[symbol] && watchlistData[symbol].industry) || "";
-  const getSubIndustry = (symbol) => (watchlistData[symbol] && watchlistData[symbol].subIndustry) || "";
+  const getIndustry = (symbol) => (industryOverrides || {})[symbol] || ((watchlistData || {})[symbol] && (watchlistData || {})[symbol].industry) || "";
+  const getSubIndustry = (symbol) => ((watchlistData || {})[symbol] && (watchlistData || {})[symbol].subIndustry) || "";
   const getMarketCap = (symbol) => (watchlistData[symbol] && watchlistData[symbol].marketCap) || "";
   const [expTypeFilter, setExpTypeFilter] = useState("OPT");
   const [expanded, setExpanded] = useState(null);
@@ -4095,7 +4095,7 @@ function StrategiesTab({ strategies, positions, symbolStrategy, posOverride, get
 
   useEffect(() => {
     Promise.resolve({ value: localStorage.getItem("opts:industryOverrides") }).then(r => {
-      if (r) setIndustryOverrides(JSON.parse(r.value));
+      if (r && r.value) setIndustryOverrides(JSON.parse(r.value) || {});
     }).catch(() => {});
   }, []);
 
