@@ -1177,6 +1177,39 @@ export default function App() {
     }
   };
 
+  // Auto-refresh Schwab token using refresh token
+  const refreshSchwabToken = useCallback(async () => {
+    if (!schwabTokens || !schwabTokens.refreshToken) return;
+    const timeLeft = schwabTokens.expiresAt - Date.now();
+    if (timeLeft > 5 * 60 * 1000) return; // More than 5 min left, no need
+    try {
+      const creds = btoa("Qrl3vl5TEAcT40qO9XjZLGHxbwe0Y2YKj7PwAtZtwYX9qNw2:2x7zXlaqPw7TemGt11OS4a5Wxl5TkdxUG8HALBihVouGMLVZAGgSLnGquAGz9rqo");
+      const resp = await fetch("https://api.schwabapi.com/v1/oauth/token", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded", "Authorization": "Basic " + creds },
+        body: "grant_type=refresh_token&refresh_token=" + encodeURIComponent(schwabTokens.refreshToken)
+      });
+      const data = await resp.json();
+      if (data.access_token) {
+        const newTokens = {
+          accessToken: data.access_token,
+          refreshToken: data.refresh_token || schwabTokens.refreshToken,
+          expiresAt: Date.now() + ((data.expires_in || 1800) * 1000)
+        };
+        await handleSchwabTokens(newTokens);
+        console.log("Schwab token auto-refreshed successfully");
+      }
+    } catch(e) { console.warn("Token refresh failed:", e); }
+  }, [schwabTokens]);
+
+  // Check token every 5 minutes
+  useEffect(() => {
+    if (!schwabTokens) return;
+    const interval = setInterval(refreshSchwabToken, 5 * 60 * 1000);
+    refreshSchwabToken(); // Check immediately
+    return () => clearInterval(interval);
+  }, [schwabTokens, refreshSchwabToken]);
+
   return (
     <div style={S.root}>
       <div style={S.bgMesh} />
@@ -2496,7 +2529,7 @@ function PnLTab({ positions = [], livePrice = {}, strategies = [], getStrategy, 
         setLoadMsg("Fetching transactions for account " + (++count) + " of " + accounts.length + "...");
         try {
           const txResp = await fetch(
-            "https://api.schwabapi.com/trader/v1/accounts/" + acc.hashValue + "/transactions?startDate=" + effectiveFromStr + "T00:00:00.000Z&endDate=" + toDate + "T23:59:59.999Z&types=TRADE",
+            "https://api.schwabapi.com/trader/v1/accounts/" + acc.hashValue + "/transactions?startDate=" + effectiveFromStr + "&endDate=" + toDate,
             { headers: { "Authorization": "Bearer " + schwabTokens.accessToken } }
           );
           if (!txResp.ok) {
@@ -5345,7 +5378,7 @@ function ImportTab({ onUpload, onClear, onClearPositions, onExport, onRestore, o
       <div style={{ marginTop: 28, padding: "16px 20px", background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 8 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
           <div style={{ fontSize: 13, fontWeight: 700, color: "#f0f0f0" }}>Charles Schwab API</div>
-          {schwabConnected && <span style={{ fontSize: 11, color: "#06d6a0", fontWeight: 700 }}>Connected</span>}
+          {schwabConnected && <span style={{ fontSize: 11, color: "#06d6a0", fontWeight: 700 }}>● Connected — Auto-refreshes every 30 min</span>}
           {schwabTokens && !schwabConnected && <span style={{ fontSize: 11, color: "#ff9f1c", fontWeight: 700 }}>Token Expired</span>}
         </div>
         <div style={{ fontSize: 12, color: "#888", marginBottom: 12 }}>
