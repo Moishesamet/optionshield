@@ -543,16 +543,16 @@ export default function App() {
         } catch(e) {}
         try {
           const lb = { value: localStorage.getItem(SK.lastBackup) };
-          if (lb) setLastBackup(JSON.parse(lb.value));
+          if (lb && lb.value) setLastBackup(JSON.parse(lb.value) || null);
         } catch(e) {}
         try {
           const st = { value: localStorage.getItem(SK.schwabTokens) };
-          if (st) setSchwabTokens(JSON.parse(st.value));
+          if (st && st.value) setSchwabTokens(JSON.parse(st.value) || null);
         } catch(e) {}
 
         // Load and migrate decisions — strip old group prefix from IDs
         if (dec && dec.value) {
-          const rawDecisions = JSON.parse(dec.value);
+          const rawDecisions = JSON.parse(dec.value) || {};
           const migrated = {};
           Object.entries(rawDecisions).forEach(([id, val]) => {
             const parts = id.split('_');
@@ -573,7 +573,7 @@ export default function App() {
         }
 
         const posData = { value: localStorage.getItem(SK.positions) };
-        if (posData) setPositions(JSON.parse(posData.value));
+        if (posData && posData.value) setPositions(JSON.parse(posData.value) || []);
       } catch (e) { console.log("Storage load error", e); }
     })();
   }, []);
@@ -621,12 +621,12 @@ export default function App() {
   }, []);
 
   const dismissAlert = useCallback(async (id) => {
-    const updated = alerts.map(a => a.id === id ? { ...a, dismissed: true } : a);
+    const updated = (alerts || []).map(a => a.id === id ? { ...a, dismissed: true } : a);
     await saveAlerts(updated);
   }, [alerts, saveAlerts]);
 
   const dismissAllAlerts = useCallback(async () => {
-    const updated = alerts.map(a => ({ ...a, dismissed: true }));
+    const updated = (alerts || []).map(a => ({ ...a, dismissed: true }));
     await saveAlerts(updated);
   }, [alerts, saveAlerts]);
 
@@ -636,7 +636,7 @@ export default function App() {
     if (posOverride[pos.id]) return posOverride[pos.id];
     // TOS group is the source of truth — use it directly
     if (pos.strategyGroup) {
-      const strat = strategies.find(s => s.name.toLowerCase() === pos.strategyGroup.toLowerCase());
+      const strat = (strategies || []).find(s => s.name.toLowerCase() === pos.strategyGroup.toLowerCase());
       if (strat) return strat.id;
     }
     // Fall back to symbol-level assignment only if no TOS group
@@ -646,14 +646,14 @@ export default function App() {
 
   // ── Accounts list ──
   const accounts = useMemo(() => {
-    const s = new Set(positions.map(p => p.account).filter(Boolean));
+    const s = new Set((positions || []).map(p => p.account).filter(Boolean));
     return ["ALL", ...Array.from(s)];
   }, [positions]);
 
   // ── Filtered positions ──
   const filteredPos = useMemo(() => {
     if (accountFilter === "ALL") return positions;
-    return positions.filter(p => p.account === accountFilter);
+    return (positions || []).filter(p => p.account === accountFilter);
   }, [positions, accountFilter]);
 
   // ── File Upload (Schwab or TOS) ──
@@ -900,7 +900,7 @@ export default function App() {
   }, []);
 
   const snoozeAlert = useCallback(async (id, untilDate) => {
-    const updated = alerts.map(a => a.id === id ? { ...a, snoozedUntil: untilDate } : a);
+    const updated = (alerts || []).map(a => a.id === id ? { ...a, snoozedUntil: untilDate } : a);
     await saveAlerts(updated);
   }, [alerts, saveAlerts]);
 
@@ -912,7 +912,7 @@ export default function App() {
     const now = new Date().toISOString();
 
     // Backfill plPct, exp, strategyId and optType on existing alerts missing them
-    const posMap = Object.fromEntries(positions.map(p => [p.id, p]));
+    const posMap = Object.fromEntries((positions || []).map(p => [p.id, p]));
     newAlerts = newAlerts.map(a => {
       const pos = posMap[a.posId];
       if (!pos) return a;
@@ -934,7 +934,7 @@ export default function App() {
 
       if (rule.id === "rule_ate_itm") {
         const bufferPct = rule.params?.bufferPct?.value || 0;
-        positions.filter(p => p.isShortPut && decisions[p.id] === "ATE").forEach(pos => {
+        (positions || []).filter(p => p.isShortPut && decisions[p.id] === "ATE").forEach(pos => {
           const price = livePrice[pos.symbol];
           if (price == null || pos.strike == null) return;
           const awayPct = (price - pos.strike) / price * 100;
@@ -968,7 +968,7 @@ export default function App() {
 
       if (rule.id === "rule_buyback_table" && rule.table) {
         const table = rule.table;
-        positions.filter(p => p.isShortPut).forEach(pos => {
+        (positions || []).filter(p => p.isShortPut).forEach(pos => {
           const price = livePrice[pos.symbol];
           if (price == null || pos.strike == null || pos.plPct == null) return;
           const awayPct = (price - pos.strike) / price * 100;
@@ -1035,7 +1035,7 @@ export default function App() {
 
       if (rule.id === "rule_iv_spike") {
         const threshold = rule.params?.ivThreshold?.value || 60;
-        const allSymbols = [...new Set(positions.map(p => p.symbol))].filter(Boolean);
+        const allSymbols = [...new Set((positions || []).map(p => p.symbol))].filter(Boolean);
         const spiked = allSymbols.filter(sym => {
           const ivStr = ((watchlistData[sym] && watchlistData[sym].implVol) || "").replace(/[^0-9.]/g, "");
           const iv = parseFloat(ivStr);
@@ -1062,7 +1062,7 @@ export default function App() {
       }
 
       if (rule.id === "rule_wait_expiry") {
-        const waitExpiring = positions.filter(p => decisions[p.id] === "Wait" && dte(p.exp) === 0);
+        const waitExpiring = (positions || []).filter(p => decisions[p.id] === "Wait" && dte(p.exp) === 0);
         if (waitExpiring.length === 0) return;
         const today = now.slice(0, 10);
         const alertId = `${rule.id}__${today}`;
@@ -1151,7 +1151,7 @@ export default function App() {
     const ids = new Set(rule?.excludedStrategyIds || []);
     // Also exclude by name "index" as fallback if no IDs configured yet
     if (ids.size === 0) {
-      strategies.forEach(s => { if (s.name?.toLowerCase() === "index") ids.add(s.id); });
+      (strategies || []).forEach(s => { if (s.name?.toLowerCase() === "index") ids.add(s.id); });
     }
     return ids;
   }, [alertRules, strategies]);
@@ -1227,9 +1227,9 @@ export default function App() {
       {/* Tabs */}
       <nav style={S.nav}>
         {[["dashboard","Dashboard"],["positions","Positions"],["exposure","Exposure"],["pnl","P&L"],["builder","Strategy Builder"],["backtester","Backtester"],["strategies","Strategies"],["alerts","Alerts"],["rules","Rules"],["import","Import CSV"]].map(([id,label]) => {
-          const criticalCount = alerts.filter(a => !a.dismissed && a.severity === "critical").length;
-          const warningCount = alerts.filter(a => !a.dismissed && a.severity === "warning").length;
-          const watchCount = alerts.filter(a => !a.dismissed && a.severity === "watch").length;
+          const criticalCount = (alerts || []).filter(a => !a.dismissed && a.severity === "critical").length;
+          const warningCount = (alerts || []).filter(a => !a.dismissed && a.severity === "warning").length;
+          const watchCount = (alerts || []).filter(a => !a.dismissed && a.severity === "watch").length;
           const totalAlerts = criticalCount + warningCount + watchCount;
           return (
             <button key={id} style={{ ...S.navBtn, ...(tab === id ? S.navActive : {}) }} onClick={() => setTab(id)}>
@@ -1271,8 +1271,8 @@ function DashboardTab({ positions = [], livePrice = {}, strategies = [], getStra
   // ── Core calculations ──
   // Index strategy excluded from all exposure calculations
   const isExcluded = (p) => excludedStrategyIds.has(getStrategy(p));
-  const shortPuts = positions.filter(p => p.isShortPut && !isExcluded(p));
-  const longPuts  = positions.filter(p => p.isLongPut);
+  const shortPuts = (positions || []).filter(p => p.isShortPut && !isExcluded(p));
+  const longPuts  = (positions || []).filter(p => p.isLongPut);
 
   // Net exposure (long put offset)
   const longPutMap = {};
@@ -1296,18 +1296,18 @@ function DashboardTab({ positions = [], livePrice = {}, strategies = [], getStra
   const totalPremium   = shortPuts.reduce((s,p) => s + (p.tradePrice||0) * Math.abs(p.qty) * 100, 0);
   const itmExposure    = shortPuts.reduce((s,p) => { const pr=livePrice[p.symbol]; return (pr==null||pr<p.strike) ? s+netExp(p) : s; }, 0);
   const otmExposure    = totalExposure - itmExposure;
-  const equityExp      = equityHoldings.reduce((s,h) => s+h.totalValue, 0);
+  const equityExp      = (equityHoldings || []).reduce((s,h) => s+h.totalValue, 0);
   const expPct         = totalEquity ? totalExposure/totalEquity*100 : null;
   const premPct        = totalExposure > 0 ? totalPremium/totalExposure*100 : 0;
 
   // ── Active alerts ──
-  const activeAlerts   = alerts.filter(a => !a.dismissed && !(a.snoozedUntil && new Date(a.snoozedUntil) > now));
+  const activeAlerts   = (alerts || []).filter(a => !a.dismissed && !(a.snoozedUntil && new Date(a.snoozedUntil) > now));
   const criticalAlerts = activeAlerts.filter(a => a.severity === "critical");
   const warningAlerts  = activeAlerts.filter(a => a.severity === "warning");
   const watchAlerts    = activeAlerts.filter(a => a.severity === "watch");
 
   // ── Expiring soon (next 30 days) ──
-  const expiringSoon = positions.filter(p => { const d = dte(p.exp); return d != null && d >= 0 && d <= 30; })
+  const expiringSoon = (positions || []).filter(p => { const d = dte(p.exp); return d != null && d >= 0 && d <= 30; })
     .sort((a,b) => (dte(a.exp)||0) - (dte(b.exp)||0));
 
   // ── Top 5 exposure by symbol ──
@@ -1326,10 +1326,10 @@ function DashboardTab({ positions = [], livePrice = {}, strategies = [], getStra
   })).filter(r => r.exp > 0);
 
   // ── Net cash (next expiry) ──
-  const expDates = [...new Set(positions.map(p=>p.exp).filter(Boolean))].sort((a,b)=>(parseExpiry(a)||0)-(parseExpiry(b)||0));
+  const expDates = [...new Set((positions || []).map(p=>p.exp).filter(Boolean))].sort((a,b)=>(parseExpiry(a)||0)-(parseExpiry(b)||0));
   const nextExp = expDates.find(e => (dte(e)||-1) >= 0) || expDates[0];
   let cashIn = 0, cashOut = 0;
-  positions.filter(p => p.exp === nextExp).forEach(p => {
+  (positions || []).filter(p => p.exp === nextExp).forEach(p => {
     const pr = livePrice[p.symbol];
     const itm = pr != null && ((p.isShortPut&&pr<p.strike)||(p.isLongPut&&pr<p.strike)||(p.isShortCall&&pr>p.strike)||(p.isLongCall&&pr>p.strike));
     if (!itm) return;
@@ -1456,10 +1456,10 @@ function DashboardTab({ positions = [], livePrice = {}, strategies = [], getStra
           <div style={{ ...S.sectionHeader, marginBottom: 8 }}>
             <span style={{ fontSize: 13, fontWeight: 700, color: "#f0f0f0" }}>Decision Breakdown</span>
           </div>
-          {[["Undecided","#888",positions.filter(p=>!decisions[p.id]).length],
-            ["ATE","#06d6a0",positions.filter(p=>decisions[p.id]==="ATE").length],
-            ["Buy Back","#ff4d6d",positions.filter(p=>decisions[p.id]==="BuyBack").length],
-            ["Wait","#ffd166",positions.filter(p=>decisions[p.id]==="Wait").length],
+          {[["Undecided","#888",(positions || []).filter(p=>!decisions[p.id]).length],
+            ["ATE","#06d6a0",(positions || []).filter(p=>decisions[p.id]==="ATE").length],
+            ["Buy Back","#ff4d6d",(positions || []).filter(p=>decisions[p.id]==="BuyBack").length],
+            ["Wait","#ffd166",(positions || []).filter(p=>decisions[p.id]==="Wait").length],
           ].map(([label,color,count]) => {
             const pct = positions.length > 0 ? count/positions.length*100 : 0;
             return (
@@ -2148,18 +2148,18 @@ function StrategyBuilderTab({ positions = [], livePrice = {}, strategies = [], g
   const [editingIdx, setEditingIdx] = useState(null);
 
   // All unique symbols from positions
-  const symbols = useMemo(() => [...new Set(positions.map(p => p.symbol).filter(Boolean))].sort(), [positions]);
+  const symbols = useMemo(() => [...new Set((positions || []).map(p => p.symbol).filter(Boolean))].sort(), [positions]);
 
   // All unique expiries for selected symbol
   const expDates = useMemo(() => {
     if (!symbol) return [];
-    return [...new Set(positions.filter(p => p.symbol === symbol).map(p => p.exp).filter(Boolean))]
+    return [...new Set((positions || []).filter(p => p.symbol === symbol).map(p => p.exp).filter(Boolean))]
       .sort((a, b) => (parseExpiry(a) || 0) - (parseExpiry(b) || 0));
   }, [symbol, positions]);
 
   // When symbol+exp chosen, load existing positions as legs
   const loadExisting = () => {
-    const existing = positions.filter(p =>
+    const existing = (positions || []).filter(p =>
       p.symbol === symbol && (!filterExp || p.exp === filterExp)
     );
     const newLegs = existing.map(p => ({
@@ -2727,11 +2727,11 @@ function PositionsTab({ positions = [], livePrice = {}, industry = {}, strategie
   const hasFilters = colFilters.symbols.size > 0 || colFilters.exps.size > 0 || colFilters.strategies.size > 0 || colFilters.accounts.size > 0;
 
   // Unique expiry dates for dropdown
-  const expOptions = useMemo(() => [...new Set(positions.map(p => p.exp).filter(Boolean))].sort((a,b) => (parseExpiry(a)||0)-(parseExpiry(b)||0)), [positions]);
+  const expOptions = useMemo(() => [...new Set((positions || []).map(p => p.exp).filter(Boolean))].sort((a,b) => (parseExpiry(a)||0)-(parseExpiry(b)||0)), [positions]);
   const stratOptions = useMemo(() => strategies, [strategies]);
 
   const filtered = useMemo(() => {
-    return positions.filter(p => {
+    return (positions || []).filter(p => {
       // Type multi-filter
       const matchesType =
         (typeFilters.has("SHORT_PUT") && p.isShortPut) ||
@@ -2801,7 +2801,7 @@ function PositionsTab({ positions = [], livePrice = {}, industry = {}, strategie
   // Summary stats — exposure always from all short puts (ignoring type filter)
   // but respects decision, symbol, expiry, strategy, account filters
   // Index strategy excluded from all exposure calculations
-  const allShortPuts = useMemo(() => positions.filter(p => {
+  const allShortPuts = useMemo(() => (positions || []).filter(p => {
     if (!p.isShortPut) return false;
     if (excludedStrategyIds.has(getStrategy(p))) return false;
     const dec = decisions[p.id] || null;
@@ -2859,7 +2859,7 @@ function PositionsTab({ positions = [], livePrice = {}, industry = {}, strategie
   const [showExpByDate, setShowExpByDate] = useState(false);
 
   // Net Cash Needed — uses existing expiry filter, defaults to next upcoming
-  const expOptions2 = useMemo(() => [...new Set(positions.map(p => p.exp).filter(Boolean))]
+  const expOptions2 = useMemo(() => [...new Set((positions || []).map(p => p.exp).filter(Boolean))]
     .sort((a,b) => (parseExpiry(a)||0)-(parseExpiry(b)||0)), [positions]);
   const nextExp = expOptions2.find(e => (dte(e) || -1) >= 0) || expOptions2[0];
   // Use first selected expiry filter, or next upcoming if none selected
@@ -2952,9 +2952,9 @@ function PositionsTab({ positions = [], livePrice = {}, industry = {}, strategie
 
         {/* Alerts card — smaller */}
         {(() => {
-          const critical = alerts.filter(a => !a.dismissed && a.severity === "critical").length;
-          const warning  = alerts.filter(a => !a.dismissed && a.severity === "warning").length;
-          const watch    = alerts.filter(a => !a.dismissed && a.severity === "watch").length;
+          const critical = (alerts || []).filter(a => !a.dismissed && a.severity === "critical").length;
+          const warning  = (alerts || []).filter(a => !a.dismissed && a.severity === "warning").length;
+          const watch    = (alerts || []).filter(a => !a.dismissed && a.severity === "watch").length;
           const total = critical + warning + watch;
           return (
             <div style={{ ...S.card, borderTop: "3px solid " + (critical>0?"#ff4d6d":warning>0?"#ff9f1c":"#4cc9f0"), flex: "1 1 120px", padding: "10px 12px" }}>
@@ -3058,7 +3058,7 @@ function PositionsTab({ positions = [], livePrice = {}, industry = {}, strategie
 
         {/* Account */}
         <MultiDropdown label="Account" allLabel="All Accounts"
-          options={[...new Set(positions.map(p => p.account).filter(Boolean))].map(a => ({ v: a, l: (accountNicknames[a] || a).slice(0, 22) }))}
+          options={[...new Set((positions || []).map(p => p.account).filter(Boolean))].map(a => ({ v: a, l: (accountNicknames[a] || a).slice(0, 22) }))}
           selected={colFilters.accounts} onToggle={v => toggleCol("accounts", v)}
           isOpen={showAccMenu} onOpen={() => { closeAllMenus(); setShowAccMenu(true); }} onClose={() => setShowAccMenu(false)} />
 
@@ -3116,7 +3116,7 @@ function PositionsTab({ positions = [], livePrice = {}, industry = {}, strategie
 
         {/* Symbol */}
         <MultiDropdown label="Symbol" allLabel="All Symbols"
-          options={[...new Set(positions.map(p => p.symbol))].sort().map(v => ({ v, l: v }))}
+          options={[...new Set((positions || []).map(p => p.symbol))].sort().map(v => ({ v, l: v }))}
           selected={colFilters.symbols} onToggle={v => toggleCol("symbols", v)}
           isOpen={showSymMenu} onOpen={() => { closeAllMenus(); setShowSymMenu(true); }} onClose={() => setShowSymMenu(false)} searchable />
 
@@ -3156,7 +3156,7 @@ function PositionsTab({ positions = [], livePrice = {}, industry = {}, strategie
                   : null;
                 const exposure = pos.isShortPut ? (pos.strike - (pos.tradePrice||0)) * Math.abs(pos.qty) * 100 : null;
                 const days = dte(pos.exp);
-                const strat = strategies.find(s => s.id === getStrategy(pos));
+                const strat = (strategies || []).find(s => s.id === getStrategy(pos));
                 const ind = industry[pos.symbol];
                 const plColor = pos.plPct == null ? "#999" : pos.plPct >= 70 ? "#06d6a0" : pos.plPct >= 40 ? "#ffd166" : pos.plPct >= 0 ? "#f4a261" : "#ff4d6d";
                 const awayColor = awayPct == null ? "#999" : awayPct > 20 ? "#06d6a0" : awayPct > 10 ? "#ffd166" : awayPct > 0 ? "#ff9f1c" : "#ff4d6d";
@@ -3235,7 +3235,7 @@ function ExposureTab({ positions = [], livePrice = {}, industry = {}, strategies
   );
 
   // Filtered short puts — Index strategy excluded from all exposure calculations
-  const allShortPuts = positions.filter(p => p.isShortPut && !excludedStrategyIds.has(getStrategy(p)));
+  const allShortPuts = (positions || []).filter(p => p.isShortPut && !excludedStrategyIds.has(getStrategy(p)));
   const isIndexStrategy = (p) => excludedStrategyIds.has(getStrategy(p));
   const shortPuts = useMemo(() => allShortPuts.filter(p => {
     if (expFilters.size > 0 && !expFilters.has(p.exp)) return false;
@@ -3262,7 +3262,7 @@ function ExposureTab({ positions = [], livePrice = {}, industry = {}, strategies
   // Used to offset short put exposure one-to-one by same symbol + same expiry
   const longPutMap = useMemo(() => {
     const map = {};
-    positions.filter(p => p.isLongPut).forEach(p => {
+    (positions || []).filter(p => p.isLongPut).forEach(p => {
       const key = `${p.symbol}|${p.exp}`;
       if (!map[key]) map[key] = [];
       // Add qty copies of the strike (qty is positive for long puts)
@@ -3387,7 +3387,7 @@ function ExposureTab({ positions = [], livePrice = {}, industry = {}, strategies
     const lm = freshLongMap();
     shortPuts.forEach(p => {
       const sid = getStrategy(p);
-      const strat = strategies.find(s => s.id === sid) || { id: sid, name: sid, color: "#888" };
+      const strat = (strategies || []).find(s => s.id === sid) || { id: sid, name: sid, color: "#888" };
       if (!map[sid]) map[sid] = { strat, positions: [], totalExposure: 0, totalPremium: 0 };
       map[sid].positions.push(p);
       map[sid].totalExposure += netCalcExposure(p, lm);
@@ -3662,7 +3662,7 @@ function ExposureTab({ positions = [], livePrice = {}, industry = {}, strategies
           <div style={{ ...S.cardLabel, marginTop: 8 }}>Exposure by Rating</div>
         </div>
         {(() => {
-          const totalEquityExp = equityHoldings.reduce((s, h) => s + h.totalValue, 0);
+          const totalEquityExp = (equityHoldings || []).reduce((s, h) => s + h.totalValue, 0);
           const combinedExp = totalExp + totalEquityExp;
           const combinedPct = totalEquity ? (combinedExp / totalEquity * 100) : null;
           const optPct = totalEquity ? (totalExp / totalEquity * 100) : null;
@@ -3972,10 +3972,10 @@ The three indexes are managed independently with expirations laddered across the
     return STRAT_DESCRIPTIONS[key] || `${name} is a custom strategy. Click the edit button to add a description.`;
   };
 
-  const uniqueSymbols = useMemo(() => [...new Set(positions.map(p => p.symbol))].sort(), [positions]);
+  const uniqueSymbols = useMemo(() => [...new Set((positions || []).map(p => p.symbol))].sort(), [positions]);
 
   const nextStratId = useMemo(() => {
-    const ids = strategies.map(s => parseInt(s.id)).filter(n => !isNaN(n));
+    const ids = (strategies || []).map(s => parseInt(s.id)).filter(n => !isNaN(n));
     const max = ids.length > 0 ? Math.max(...ids) : 1000;
     return String(Math.ceil((max + 1) / 1000) * 1000);
   }, [strategies]);
@@ -3988,7 +3988,7 @@ The three indexes are managed independently with expirations laddered across the
   };
 
   const handleRename = async (id, name, color) => {
-    const ns = strategies.map(s => s.id === id ? { ...s, name, color } : s);
+    const ns = (strategies || []).map(s => s.id === id ? { ...s, name, color } : s);
     await saveStrategies(ns);
     setEditingStrat(null);
   };
@@ -3998,7 +3998,7 @@ The three indexes are managed independently with expirations laddered across the
 
   const handleDelete = async (id) => {
     if (strategies.length <= 1) return;
-    const ns = strategies.filter(s => s.id !== id);
+    const ns = (strategies || []).filter(s => s.id !== id);
     await saveStrategies(ns);
     const newSS = { ...symbolStrategy };
     const newPO = { ...posOverride };
@@ -4016,7 +4016,7 @@ The three indexes are managed independently with expirations laddered across the
 
   const handleRebuild = async () => {
     const STRAT_COLORS = ["#06d6a0","#4cc9f0","#ffd166","#ff9f1c","#c77dff","#f72585","#4361ee","#ff4d6d","#7209b7","#3a0ca3"];
-    const groupNames = [...new Set(positions.map(p => p.strategyGroup).filter(Boolean))].sort();
+    const groupNames = [...new Set((positions || []).map(p => p.strategyGroup).filter(Boolean))].sort();
     const newStrats = [];
     const nameToId = {};
     let nextId = 1000;
@@ -4027,7 +4027,7 @@ The three indexes are managed independently with expirations laddered across the
       nextId += 1000;
     });
     const newSymStrat = {};
-    positions.forEach(p => {
+    (positions || []).forEach(p => {
       if (p.strategyGroup && nameToId[p.strategyGroup.toLowerCase()]) {
         newSymStrat[p.symbol] = nameToId[p.strategyGroup.toLowerCase()];
       }
@@ -4046,7 +4046,7 @@ The three indexes are managed independently with expirations laddered across the
       {/* Strategies Section */}
       {["strategies","symbols","accounts"].map(sectionId => {
         const isOpen = openSection === sectionId;
-        const allSyms = [...new Set([...positions.map(p => p.symbol), ...equityHoldings.map(h => h.symbol)])].filter(Boolean).sort();
+        const allSyms = [...new Set([...positions.map(p => p.symbol), ...(equityHoldings || []).map(h => h.symbol)])].filter(Boolean).sort();
         const unrated = allSyms.filter(s => !symbolRatings[s]).length;
         const labels = {
           strategies: "Strategies",
@@ -4056,7 +4056,7 @@ The three indexes are managed independently with expirations laddered across the
         const descs = {
           strategies: strategies.length + " strategies configured",
           symbols: "Strategy · Rating · Industry — " + allSyms.length + " symbols · " + unrated + " unrated",
-          accounts: [...new Set(positions.map(p=>p.account).filter(Boolean))].length + " accounts",
+          accounts: [...new Set((positions || []).map(p=>p.account).filter(Boolean))].length + " accounts",
         };
         return (
           <div key={sectionId} style={{ marginBottom: 8, background: "rgba(255,255,255,0.03)", borderRadius: 10, border: "1px solid rgba(255,255,255,0.08)", overflow: "hidden" }}>
@@ -4089,7 +4089,7 @@ The three indexes are managed independently with expirations laddered across the
                     <button style={S.cancelBtn} onClick={() => setAddingNew(false)}>Cancel</button>
                   </div>
                 )}
-                {strategies.map(strat => (
+                {(strategies || []).map(strat => (
                   <div key={strat.id} style={{ ...S.stratCard, borderLeft: "3px solid " + (strat.color), marginBottom: 6 }}>
                     {confirmDeleteId === strat.id ? (
                       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -4104,7 +4104,7 @@ The three indexes are managed independently with expirations laddered across the
                         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                           <div style={{ width: 10, height: 10, borderRadius: "50%", background: strat.color }} />
                           <span style={{ color: "#f0f0f0", fontWeight: 600, fontSize: 13 }}>{strat.name}</span>
-                          <span style={{ color: "#666", fontSize: 11 }}>{positions.filter(p => getStrategy(p) === strat.id).length} positions</span>
+                          <span style={{ color: "#666", fontSize: 11 }}>{(positions || []).filter(p => getStrategy(p) === strat.id).length} positions</span>
                         </div>
                         <div style={{ display: "flex", gap: 6 }}>
                           <button style={{ ...S.filterBtn, fontSize: 11, padding: "3px 8px" }} onClick={() => setViewingStrat(strat)} title="View description">📄</button>
@@ -4165,7 +4165,7 @@ The three indexes are managed independently with expirations laddered across the
                         const rating = symbolRatings[sym] || "";
                         const current = symbolStrategy[sym] || strategies[0]?.id || "";
                         const watchlistIndustry = (watchlistData[sym] && watchlistData[sym].industry) || "";
-                        const industryVal = industryOverrides[sym] || watchlistIndustry;
+                        const industryVal = (industryOverrides || {})[sym] || watchlistIndustry;
                         return (
                           <tr key={sym} style={{ background: i%2===0?"rgba(255,255,255,0.02)":"transparent" }}>
                             <td style={{ ...S.td, fontWeight: 700, color: "#f0f0f0" }}>{sym}</td>
@@ -4173,7 +4173,7 @@ The three indexes are managed independently with expirations laddered across the
                               <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
                                 <select value={current} onChange={e => handleSymbolAssign(sym, e.target.value)}
                                   style={{ ...S.sortSelect, fontSize: 11, padding: "3px 6px", flex: 1 }}>
-                                  {strategies.map(s => <option key={s.id} value={s.id}>{s.name.slice(0,18)}</option>)}
+                                  {(strategies || []).map(s => <option key={s.id} value={s.id}>{s.name.slice(0,18)}</option>)}
                                 </select>
                                 {symbolStrategy[sym] && (
                                   <button onClick={() => { const ns={...symbolStrategy}; delete ns[sym]; saveSymbolStrategy(ns); }}
@@ -4204,8 +4204,8 @@ The three indexes are managed independently with expirations laddered across the
                                 onChange={e => saveIndustryOverrides({ ...industryOverrides, [sym]: e.target.value })}
                                 placeholder={watchlistIndustry || "Enter industry..."}
                                 style={{ ...S.input, padding: "3px 8px", fontSize: 11,
-                                  color: industryOverrides[sym] ? "#ffd166" : "#aaa",
-                                  borderColor: industryOverrides[sym] ? "rgba(255,213,102,0.3)" : "rgba(255,255,255,0.08)"
+                                  color: (industryOverrides || {})[sym] ? "#ffd166" : "#aaa",
+                                  borderColor: (industryOverrides || {})[sym] ? "rgba(255,213,102,0.3)" : "rgba(255,255,255,0.08)"
                                 }}
                               />
                             </td>
@@ -4220,7 +4220,7 @@ The three indexes are managed independently with expirations laddered across the
 
             {isOpen && sectionId === "accounts" && (
               <div style={{ padding: "4px 18px 18px" }}>
-                {[...new Set(positions.map(p => p.account).filter(Boolean))].map(acc => (
+                {[...new Set((positions || []).map(p => p.account).filter(Boolean))].map(acc => (
                   <div key={acc} style={{ background: "rgba(255,255,255,0.04)", borderRadius: 8, padding: "8px 12px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 8 }}>
                     <span style={{ color: "#888", fontSize: 12, minWidth: 140 }}>{acc}</span>
                     <input
@@ -4283,7 +4283,7 @@ function EditStratForm({ strat, onSave, onCancel, colors }) {
 // ACCOUNTS TAB
 // ══════════════════════════════════════════════════════════════════════════════
 function AccountsTab({ positions, accountNicknames, saveAccountNicknames }) {
-  const uniqueCodes = useMemo(() => [...new Set(positions.map(p => p.account).filter(Boolean))].sort(), [positions]);
+  const uniqueCodes = useMemo(() => [...new Set((positions || []).map(p => p.account).filter(Boolean))].sort(), [positions]);
   const [drafts, setDrafts] = useState({});
   const [newCode, setNewCode] = useState("");
   const [newName, setNewName] = useState("");
@@ -4369,8 +4369,8 @@ function AlertsTab({ alerts, onDismiss, onDismissAll, onSnooze, strategies = [],
   const [sortDir2, setSortDir2] = useState("desc");
 
   const now = new Date();
-  const active = alerts.filter(a => !a.dismissed && !(a.snoozedUntil && new Date(a.snoozedUntil) > now));
-  const snoozed = alerts.filter(a => !a.dismissed && a.snoozedUntil && new Date(a.snoozedUntil) > now);
+  const active = (alerts || []).filter(a => !a.dismissed && !(a.snoozedUntil && new Date(a.snoozedUntil) > now));
+  const snoozed = (alerts || []).filter(a => !a.dismissed && a.snoozedUntil && new Date(a.snoozedUntil) > now);
   const visible = showDismissed ? alerts : showSnoozed ? [...active, ...snoozed] : active;
 
   const critical = active.filter(a => a.severity === "critical");
@@ -4402,7 +4402,7 @@ function AlertsTab({ alerts, onDismiss, onDismissAll, onSnooze, strategies = [],
     if (key === "severity") return SORDER[a.severity] || 9;
     if (key === "symbol") return a.symbol || "";
     if (key === "optType") return a.optType || "";
-    if (key === "strategyId") return strategies.find(s => s.id === a.strategyId)?.name || "";
+    if (key === "strategyId") return (strategies || []).find(s => s.id === a.strategyId)?.name || "";
     if (key === "rule" || key === "message") return a.ruleId || "";
     if (key === "timestamp") return new Date(a.timestamp);
     if (key === "plPct") return a.plPct || -999;
@@ -4537,7 +4537,7 @@ function AlertsTab({ alerts, onDismiss, onDismissAll, onSnooze, strategies = [],
                         })()}
                       </td>
                       <td style={{ ...S.td, color: "#aaa", fontSize: 11 }}>
-                        {alert.strategyId ? (strategies.find(s => s.id === alert.strategyId)?.name || "—") : "—"}
+                        {alert.strategyId ? ((strategies || []).find(s => s.id === alert.strategyId)?.name || "—") : "—"}
                       </td>
                       <td style={{ ...S.td, color: "#aaa", fontSize: 11 }}>{ruleLabel(alert.ruleId)}</td>
                       <td style={{ ...S.td, color: "#888", fontSize: 11 }}>{new Date(alert.timestamp).toLocaleDateString()}</td>
@@ -4738,7 +4738,7 @@ function RulesTab({ alertRules, saveAlertRules, strategies = [] }) {
                   Use this for strategies with their own separate exposure logic (e.g. Index).
                 </div>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                  {strategies.map(s => {
+                  {(strategies || []).map(s => {
                     const isExcluded = excludedIds.has(s.id);
                     return (
                       <button key={s.id} onClick={() => toggleExclusion(s.id)}
@@ -4754,7 +4754,7 @@ function RulesTab({ alertRules, saveAlertRules, strategies = [] }) {
                 </div>
                 {excludedIds.size > 0 && (
                   <div style={{ marginTop: 10, fontSize: 11, color: "#888" }}>
-                    Excluded: {strategies.filter(s => excludedIds.has(s.id)).map(s => s.name).join(", ")}
+                    Excluded: {(strategies || []).filter(s => excludedIds.has(s.id)).map(s => s.name).join(", ")}
                   </div>
                 )}
               </div>
@@ -5009,7 +5009,7 @@ function ImportTab({ onUpload, onClear, onClearPositions, onExport, onRestore, o
         const posData = await posResp.json();
         const positions = (posData && posData.securitiesAccount && posData.securitiesAccount.positions) || [];
 
-        positions.forEach(p => {
+        (positions || []).forEach(p => {
           const inst = p.instrument;
           if (!inst || inst.assetType !== "OPTION") return;
 
