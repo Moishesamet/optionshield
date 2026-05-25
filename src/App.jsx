@@ -5060,6 +5060,8 @@ function ImportTab({ onUpload, onClear, onClearPositions, onExport, onRestore, o
         if (!posResp.ok) return;
         const posData = await posResp.json();
         const positions = (posData && posData.securitiesAccount && posData.securitiesAccount.positions) || [];
+        console.log("Account", acc.accountNumber, "positions:", positions.length);
+        if (positions.length > 0) console.log("Sample position:", JSON.stringify(positions[0]).slice(0, 300));
 
         (positions || []).forEach(p => {
           const inst = p.instrument;
