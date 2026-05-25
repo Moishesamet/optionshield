@@ -28,6 +28,7 @@ const SK = {
   watchlistData: "opts:watchlistData",
   lastBackup: "opts:lastBackup",
   schwabTokens: "opts:schwabTokens",
+  txHistory: "opts:txHistory",
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -183,6 +184,86 @@ function parseCSVLine(line) {
   }
   result.push(current);
   return result;
+}
+
+// ── Schwab Transaction CSV Parser ─────────────────────────────────────────────
+function parseSchwabTransactionCSV(text, accountName) {
+  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+  const trades = [];
+  const monNames = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+
+  const parseCSVLine = (line) => {
+    const result = [];
+    let inQuote = false, cur = '';
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (ch === '"') { inQuote = !inQuote; }
+      else if (ch === ',' && !inQuote) { result.push(cur.trim()); cur = ''; }
+      else { cur += ch; }
+    }
+    result.push(cur.trim());
+    return result;
+  };
+
+  const parseOptionSym = (sym) => {
+    // Format: "KSS 01/19/2024 35.00 P" or "SPY 06/01/2022 388.00 C"
+    const m = sym.match(/^([A-Z.]+)\s+(\d{2})\/(\d{2})\/(\d{4})\s+([\d.]+)\s+([PC])$/);
+    if (!m) return null;
+    const mon = parseInt(m[2]) - 1;
+    const day = parseInt(m[3]);
+    const yr = parseInt(m[4]);
+    const strike = parseFloat(m[5]);
+    const type = m[6] === 'P' ? 'PUT' : 'CALL';
+    const exp = String(day).padStart(2,'0') + ' ' + monNames[mon] + ' ' + yr;
+    return { symbol: m[1], exp, strike, type };
+  };
+
+  for (let i = 1; i < lines.length; i++) {
+    const cols = parseCSVLine(lines[i]);
+    if (cols.length < 8) continue;
+    const dateRaw = cols[0].replace(/ as of .+/, '').trim();
+    const action = cols[1];
+    const symRaw = cols[2];
+    const qty = parseFloat(cols[4]) || 0;
+    const price = parseFloat((cols[5] || '').replace(/[$,]/g, '')) || 0;
+    const fees = parseFloat((cols[6] || '').replace(/[$,]/g, '')) || 0;
+    const amount = parseFloat((cols[7] || '').replace(/[$,]/g, '')) || 0;
+
+    // Only process option trades
+    const isOptionAction = ['Sell to Open','Buy to Close','Buy to Open','Sell to Close','Assigned','Expired'].includes(action);
+    if (!isOptionAction || !symRaw) continue;
+
+    const parsed = parseOptionSym(symRaw);
+    if (!parsed) continue;
+
+    // Parse date MM/DD/YYYY
+    const dm = dateRaw.match(/(\d{2})\/(\d{2})\/(\d{4})/);
+    if (!dm) continue;
+    const date = dm[3] + '-' + dm[1] + '-' + dm[2]; // YYYY-MM-DD
+
+    const isOpen = action === 'Sell to Open' || action === 'Buy to Open';
+    const isClose = action === 'Buy to Close' || action === 'Sell to Close' || action === 'Expired' || action === 'Assigned';
+    const isSell = action === 'Sell to Open' || action === 'Sell to Close';
+
+    trades.push({
+      id: date + '_' + symRaw + '_' + action + '_' + i,
+      date,
+      account: accountName,
+      symbol: parsed.symbol,
+      exp: parsed.exp,
+      strike: parsed.strike,
+      type: parsed.type,
+      action,
+      isOpen,
+      isClose,
+      isSell,
+      qty: Math.abs(qty),
+      price,
+      fees,
+      amount,
+    });
+  }
+  return trades;
 }
 
 // ── TOS Position Statement Parser ─────────────────────────────────────────────
@@ -491,6 +572,7 @@ export default function App() {
   const [watchlistData, setWatchlistData] = useState({});
   const [industryOverrides, setIndustryOverrides] = useState({});
   const [lastBackup, setLastBackup] = useState(null);
+  const [txHistory, setTxHistory] = useState([]);
   const [schwabTokens, setSchwabTokens] = useState({
     accessToken: "I0.b2F1dGgyLmNkYy5zY2h3YWIuY29t.-ohq5gaW89qO4GGzaN0Mqj4LgHyvqPadJPDRjJekjWc@",
     refreshToken: "cMDNgvNPt3ArVJ0kmfE7hCOAYKJU9PsaQ-k6zqH1X9TO_ZvDWDeN4joenbrHhVAKU3XyTtXCd3UvmGMh-OACyi2Z9HO1Vm0Ck-fsa3_NJJz4Dglv242vPP7tb1muFe5efzieZEtMkOs@",
@@ -574,6 +656,8 @@ export default function App() {
 
         const posData = { value: localStorage.getItem(SK.positions) };
         if (posData && posData.value) setPositions(JSON.parse(posData.value) || []);
+        const txData = { value: localStorage.getItem(SK.txHistory) };
+        if (txData && txData.value) setTxHistory(JSON.parse(txData.value) || []);
       } catch (e) { console.log("Storage load error", e); }
     })();
   }, []);
@@ -1249,11 +1333,11 @@ export default function App() {
         {tab === "exposure" && <ExposureTab positions={filteredPos} livePrice={livePrice} industry={industry} strategies={strategies} getStrategy={getStrategy} equityHoldings={equityHoldings} totalEquity={totalEquity} symbolRatings={symbolRatings} watchlistData={watchlistData} excludedStrategyIds={excludedStrategyIds} industryOverrides={industryOverrides} />}
         {tab === "alerts" && <AlertsTab alerts={alerts} onDismiss={dismissAlert} onDismissAll={dismissAllAlerts} onSnooze={snoozeAlert} strategies={strategies} positions={positions} livePrice={livePrice} />}
         {tab === "rules" && <RulesTab alertRules={alertRules} saveAlertRules={saveAlertRules} strategies={strategies} />}
-        {tab === "pnl" && <PnLTab positions={positions} livePrice={livePrice} strategies={strategies} getStrategy={getStrategy} accountNicknames={accountNicknames} schwabTokens={schwabTokens} />}
+        {tab === "pnl" && <PnLTab positions={positions} livePrice={livePrice} strategies={strategies} getStrategy={getStrategy} accountNicknames={accountNicknames} schwabTokens={schwabTokens} txHistory={txHistory} />}
         {tab === "backtester" && <BacktesterTab />}
         {tab === "builder" && <StrategyBuilderTab positions={positions} livePrice={livePrice} strategies={strategies} getStrategy={getStrategy} />}
         {tab === "strategies" && <StrategiesTab strategies={strategies} positions={positions} symbolStrategy={symbolStrategy} posOverride={posOverride} getStrategy={getStrategy} saveStrategies={saveStrategies} saveSymbolStrategy={saveSymbolStrategy} savePosOverride={savePosOverride} symbolRatings={symbolRatings} saveSymbolRatings={saveSymbolRatings} equityHoldings={equityHoldings} watchlistData={watchlistData} accountNicknames={accountNicknames} saveAccountNicknames={saveAccountNicknames} positions2={positions} />}
-        {tab === "import" && <ImportTab onUpload={(f, src) => handleCSV(f, src)} onClear={handleClearAll} onClearPositions={handleClearPositions} onExport={handleExport} onRestore={handleRestore} onWatchlist={handleWatchlistUpload} watchlistCount={Object.keys(watchlistData).length} posCount={positions.length} lastBackup={lastBackup} onBackup={handleBackup} schwabTokens={schwabTokens} onSchwabTokens={handleSchwabTokens} onSchwabImport={async (imported) => { setPositions(imported); localStorage.setItem(SK.positions, JSON.stringify(imported)); notify("✓ " + imported.length + " positions imported from Schwab!", "success"); }} />}
+        {tab === "import" && <ImportTab onUpload={(f, src) => handleCSV(f, src)} onClear={handleClearAll} onClearPositions={handleClearPositions} onExport={handleExport} onRestore={handleRestore} onWatchlist={handleWatchlistUpload} watchlistCount={Object.keys(watchlistData).length} posCount={positions.length} lastBackup={lastBackup} onBackup={handleBackup} schwabTokens={schwabTokens} onSchwabTokens={handleSchwabTokens} txHistoryCount={txHistory.length} onTxHistory={(trades) => { const merged = [...txHistory.filter(t => !trades.find(d => d.account === t.account && d.date === t.date && d.symbol === t.symbol && d.action === t.action)), ...trades]; setTxHistory(merged); localStorage.setItem(SK.txHistory, JSON.stringify(merged)); notify("✓ " + trades.length + " transactions added (" + merged.length + " total saved)", "success"); }} onSchwabImport={async (imported) => { setPositions(imported); localStorage.setItem(SK.positions, JSON.stringify(imported)); notify("✓ " + imported.length + " positions imported from Schwab!", "success"); }} />}
       </main>
     </div>
   );
@@ -2444,7 +2528,7 @@ function StrategyBuilderTab({ positions = [], livePrice = {}, strategies = [], g
   );
 }
 
-function PnLTab({ positions = [], livePrice = {}, strategies = [], getStrategy, accountNicknames = {}, schwabTokens }) {
+function PnLTab({ positions = [], livePrice = {}, strategies = [], getStrategy, accountNicknames = {}, schwabTokens, txHistory = [] }) {
   const [loading, setLoading] = useState(false);
   const [loadMsg, setLoadMsg] = useState("");
   const [error, setError] = useState("");
@@ -2533,16 +2617,90 @@ function PnLTab({ positions = [], livePrice = {}, strategies = [], getStrategy, 
     }).filter(Boolean);
   }, [positions, livePrice, manualOverrides]);
 
+  // Calculate realized P&L from saved transaction history
+  const realizedRows = useMemo(function() {
+    if (!txHistory || txHistory.length === 0) return [];
+    // Group trades by symbol+exp+strike+type+account
+    const tradeMap = {};
+    txHistory.forEach(function(tx) {
+      const key = tx.symbol + '|' + tx.exp + '|' + tx.strike + '|' + tx.type + '|' + tx.account;
+      if (!tradeMap[key]) tradeMap[key] = { opens: [], closes: [] };
+      if (tx.isOpen) tradeMap[key].opens.push(tx);
+      else if (tx.isClose) tradeMap[key].closes.push(tx);
+    });
+
+    const rows = [];
+    Object.entries(tradeMap).forEach(function([key, group]) {
+      group.closes.forEach(function(close) {
+        // Find matching open
+        const open = group.opens.find(function(o) { return o.qty === close.qty; }) || group.opens[0];
+        if (!open) return;
+
+        const openPrice = open.price || 0;
+        const closePrice = close.price || 0;
+        const qty = close.qty;
+        const fees = (open.fees || 0) + (close.fees || 0);
+
+        // P&L: if opened short (Sell to Open) → collected premium, paid to close
+        // if opened long (Buy to Open) → paid premium, received to close
+        let pnl = 0;
+        if (open.isSell) {
+          // Short position: collected openPrice, paid closePrice
+          pnl = (openPrice - closePrice) * qty * 100;
+        } else {
+          // Long position: paid openPrice, received closePrice
+          pnl = (closePrice - openPrice) * qty * 100;
+        }
+
+        const costBasis = openPrice * qty * 100;
+        const stratName = inferStrategy(close.symbol);
+        const dateObj = new Date(close.date);
+        const month = String(dateObj.getMonth()+1).padStart(2,'0') + '/' + String(dateObj.getFullYear()).slice(-2);
+        const year = String(dateObj.getFullYear());
+
+        rows.push({
+          id: close.id,
+          symbol: close.symbol,
+          description: close.exp + ' $' + close.strike + ' ' + (close.type === 'PUT' ? 'Put' : 'Call'),
+          stratName: stratName,
+          account: close.account,
+          month: month,
+          year: year,
+          date: close.date,
+          tradePrice: openPrice,
+          markPrice: closePrice,
+          pnl: pnl,
+          costBasis: costBasis,
+          fees: fees,
+          netPnl: pnl - fees,
+          pnlPct: costBasis > 0 ? pnl/costBasis*100 : null,
+          isShort: open.isSell,
+          isPut: close.type === 'PUT',
+          isRealized: true,
+          closeDate: close.date,
+          closeAction: close.action,
+        });
+      });
+    });
+    return rows;
+  }, [txHistory, manualOverrides]);
+
+  const allRows = useMemo(function() {
+    return [...unrealizedRows, ...realizedRows];
+  }, [unrealizedRows, realizedRows]);
+
   const filtered = useMemo(function() {
-    return unrealizedRows.filter(function(r) {
+    return allRows.filter(function(r) {
       if (filterAccount !== "All" && r.account !== filterAccount) return false;
       if (filterStrategy !== "All" && r.stratName !== filterStrategy) return false;
+      if (filterType === "Realized" && !r.isRealized) return false;
+      if (filterType === "Unrealized" && r.isRealized) return false;
       if (filterType === "Short Puts" && !(r.isShort && r.isPut)) return false;
       if (filterType === "Long Puts" && !(!r.isShort && r.isPut)) return false;
       if (filterType === "Calls" && r.isPut) return false;
       return true;
     });
-  }, [unrealizedRows, filterAccount, filterStrategy, filterType]);
+  }, [allRows, filterAccount, filterStrategy, filterType]);
 
   const grouped = useMemo(function() {
     const map = {};
@@ -2561,6 +2719,8 @@ function PnLTab({ positions = [], livePrice = {}, strategies = [], getStrategy, 
   }, [filtered, groupBy, sortKey, sortDir]);
 
   const totalPnl = filtered.reduce(function(s,r) { return s+r.pnl; }, 0);
+  const totalRealized = filtered.filter(function(r){return r.isRealized;}).reduce(function(s,r){return s+r.netPnl;},0);
+  const totalUnrealized = filtered.filter(function(r){return !r.isRealized;}).reduce(function(s,r){return s+r.pnl;},0);
   const winners = filtered.filter(function(r) { return r.pnl > 0; }).length;
   const losers = filtered.filter(function(r) { return r.pnl < 0; }).length;
 
@@ -2584,7 +2744,15 @@ function PnLTab({ positions = [], livePrice = {}, strategies = [], getStrategy, 
       <div style={{ ...S.summaryRow, gap: 10, marginBottom: 16 }}>
         <div style={{ ...S.card, flex:"1 1 120px", borderTop:"3px solid "+pnlColor(totalPnl), padding:"10px 14px" }}>
           <div style={{ fontSize:18, fontWeight:700, color:pnlColor(totalPnl) }}>{totalPnl>=0?"+":""}{fmt$(totalPnl)}</div>
-          <div style={{ fontSize:10, color:"#888" }}>Unrealized P&L</div>
+          <div style={{ fontSize:10, color:"#888" }}>Total P&L</div>
+        </div>
+        <div style={{ ...S.card, flex:"1 1 120px", borderTop:"3px solid #06d6a0", padding:"10px 14px" }}>
+          <div style={{ fontSize:16, fontWeight:700, color:pnlColor(totalRealized) }}>{totalRealized>=0?"+":""}{fmt$(totalRealized)}</div>
+          <div style={{ fontSize:10, color:"#888" }}>Realized{txHistory.length===0?" (upload history)":""}</div>
+        </div>
+        <div style={{ ...S.card, flex:"1 1 120px", borderTop:"3px solid #4cc9f0", padding:"10px 14px" }}>
+          <div style={{ fontSize:16, fontWeight:700, color:pnlColor(totalUnrealized) }}>{totalUnrealized>=0?"+":""}{fmt$(totalUnrealized)}</div>
+          <div style={{ fontSize:10, color:"#888" }}>Unrealized</div>
         </div>
         <div style={{ ...S.card, flex:"1 1 100px", borderTop:"3px solid #06d6a0", padding:"10px 14px" }}>
           <div style={{ fontSize:18, fontWeight:700, color:"#06d6a0" }}>{winners}</div>
@@ -2627,6 +2795,8 @@ function PnLTab({ positions = [], livePrice = {}, strategies = [], getStrategy, 
           <div style={{ fontSize:10, color:"#666", textTransform:"uppercase", letterSpacing:0.8 }}>Type</div>
           <select value={filterType} onChange={function(e){setFilterType(e.target.value);}} style={S.sortSelect}>
             <option value="All">All</option>
+            <option value="Realized">Realized Only</option>
+            <option value="Unrealized">Unrealized Only</option>
             <option value="Short Puts">Short Puts</option>
             <option value="Long Puts">Long Puts</option>
             <option value="Calls">Calls</option>
@@ -2712,7 +2882,7 @@ function PnLTab({ positions = [], livePrice = {}, strategies = [], getStrategy, 
                           {g.rows.sort(function(a,b){return b.pnl-a.pnl;}).map(function(r, j) {
                             return (
                               <tr key={r.id} style={{ background: j%2===0?"rgba(255,255,255,0.02)":"transparent" }}>
-                                <td style={{ ...S.td, color:"#ccc", fontSize:11, paddingLeft:20 }}>{r.description}</td>
+                                <td style={{ ...S.td, color:"#ccc", fontSize:11, paddingLeft:20 }}>{r.description} {r.isRealized ? <span style={{color:"#06d6a0",fontSize:9}}>CLOSED</span> : <span style={{color:"#4cc9f0",fontSize:9}}>OPEN</span>}</td>
                                 <td style={{ ...S.td, color:"#888", fontSize:11 }}>{r.stratName}</td>
                                 <td style={{ ...S.td, color:"#888", fontSize:11 }}>{r.account}</td>
                                 <td style={{ ...S.td, textAlign:"right", color:"#888", fontSize:11 }}>{r.dte != null ? r.dte : "—"}</td>
@@ -4978,7 +5148,7 @@ function SettingsRules({ alertRules, saveAlertRules }) {
     </div>
   );
 }
-function ImportTab({ onUpload, onClear, onClearPositions, onExport, onRestore, onWatchlist, watchlistCount, posCount, lastBackup, onBackup, schwabTokens, onSchwabTokens, onSchwabImport }) {
+function ImportTab({ onUpload, onClear, onClearPositions, onExport, onRestore, onWatchlist, watchlistCount, posCount, lastBackup, onBackup, schwabTokens, onSchwabTokens, onSchwabImport, txHistoryCount = 0, onTxHistory }) {
 
   const [schwabCallbackUrl, setSchwabCallbackUrl] = useState("");
   const [schwabStatus, setSchwabStatus] = useState("");
@@ -5237,6 +5407,43 @@ function ImportTab({ onUpload, onClear, onClearPositions, onExport, onRestore, o
             ✓ Mark prices and P/L% updated<br />
             ✓ New positions added automatically<br />
             ✗ Strategies must be assigned manually
+          </div>
+        </div>
+      </div>
+
+      {/* Transaction History Upload */}
+      <div style={{ marginTop: 24, padding: "16px 20px", background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 8 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+          <span style={{ fontSize: 14, fontWeight: 700, color: "#f0f0f0" }}>Transaction History</span>
+          <span style={{ background: "rgba(6,214,160,0.15)", color: "#06d6a0", border: "1px solid rgba(6,214,160,0.3)", borderRadius: 4, padding: "1px 7px", fontSize: 10, fontWeight: 700 }}>FOR P&L</span>
+          {txHistoryCount > 0 && <span style={{ fontSize: 11, color: "#06d6a0" }}>✓ {txHistoryCount} trades saved</span>}
+        </div>
+        <div style={{ fontSize: 12, color: "#888", marginBottom: 12, lineHeight: 1.7 }}>
+          In Schwab: <b style={{ color: "#ddd" }}>Accounts → History → Export</b>. Upload once per account — data is saved permanently and merged automatically. Upload all 4 accounts for complete history.
+        </div>
+        <div
+          style={{ ...S.dropZone, borderColor: "rgba(6,214,160,0.4)", padding: "20px", display: "flex", alignItems: "center", gap: 16 }}
+          onDragOver={e => e.preventDefault()}
+          onDrop={e => {
+            e.preventDefault();
+            const f = e.dataTransfer.files[0];
+            if (!f || !onTxHistory) return;
+            const reader = new FileReader();
+            reader.onload = ev => {
+              const text = ev.target.result;
+              const acct = f.name.split('_')[0] || 'Unknown';
+              const trades = parseSchwabTransactionCSV(text, acct);
+              if (trades.length > 0) onTxHistory(trades);
+              else alert('No option trades found in file.');
+            };
+            reader.readAsText(f);
+          }}
+          onClick={() => { const inp = document.createElement('input'); inp.type='file'; inp.accept='.csv'; inp.multiple=true; inp.onchange=e=>{[...e.target.files].forEach(f=>{const r=new FileReader();r.onload=ev=>{const acct=f.name.split('_')[0]||'Unknown';const trades=parseSchwabTransactionCSV(ev.target.result,acct);if(trades.length>0&&onTxHistory)onTxHistory(trades);};r.readAsText(f);});}; inp.click(); }}
+        >
+          <div style={{ fontSize: 28 }}>📜</div>
+          <div>
+            <div style={{ color: "#aaa", fontSize: 14, marginBottom: 4 }}>Drop Schwab Transaction History CSV</div>
+            <div style={{ color: "#555", fontSize: 11 }}>or click to browse · upload multiple files at once · data merges automatically</div>
           </div>
         </div>
       </div>
