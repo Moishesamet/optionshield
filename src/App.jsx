@@ -2523,7 +2523,7 @@ function PnLTab({ positions = [], livePrice = {}, strategies = [], getStrategy, 
         setLoadMsg("Fetching transactions for account " + (++count) + " of " + accounts.length + "...");
         try {
           const txResp = await fetch(
-            "https://api.schwabapi.com/trader/v1/accounts/" + acc.hashValue + "/transactions?startDate=" + effectiveFromStr + "&endDate=" + toDate,
+            "https://api.schwabapi.com/trader/v1/accounts/" + acc.hashValue + "/transactions?startDate=" + effectiveFromStr + "T00:00:00.000Z&endDate=" + toDate + "T23:59:59.999Z",
             { headers: { "Authorization": "Bearer " + schwabTokens.accessToken } }
           );
           if (!txResp.ok) {
@@ -2816,42 +2816,15 @@ function PnLTab({ positions = [], livePrice = {}, strategies = [], getStrategy, 
         </div>
       )}
 
-      {/* Unrealized positions always shown */}
+      {/* Unrealized positions — only show when transactions are loaded too */}
       {unrealizedRows.length > 0 && transactions.length === 0 && (
-        <div>
-          <div style={{ ...S.sectionHeader, marginBottom: 10 }}>
-            <span style={{ fontSize: 13, fontWeight: 700 }}>Unrealized P&L — Open Positions</span>
-            <span style={{ fontSize: 11, color: "#4cc9f0" }}>Click "Load from Schwab" to add realized P&L</span>
+        <div style={{ padding: "16px 20px", background: "rgba(76,201,240,0.06)", border: "1px solid rgba(76,201,240,0.2)", borderRadius: 10, marginTop: 16 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: "#4cc9f0", marginBottom: 6 }}>Load Transaction History First</div>
+          <div style={{ fontSize: 12, color: "#888", lineHeight: 1.7 }}>
+            Click <strong style={{ color: "#4cc9f0" }}>📥 Load from Schwab</strong> above to load your transaction history. Once loaded, you will see accurate realized and unrealized P&L combined.
           </div>
-          <div style={{ ...S.tableWrap, maxHeight: 320 }}>
-            <table style={S.table}>
-              <thead>
-                <tr>
-                  <th style={S.th}>Symbol</th>
-                  <th style={S.th}>Position</th>
-                  <th style={S.th}>Strategy</th>
-                  <th style={S.th}>Account</th>
-                  <th style={{ ...S.th, textAlign: "right" }}>Mark</th>
-                  <th style={{ ...S.th, textAlign: "right" }}>Unrealized P&L</th>
-                  <th style={{ ...S.th, textAlign: "right" }}>% Return</th>
-                </tr>
-              </thead>
-              <tbody>
-                {unrealizedRows.map((r, i) => (
-                  <tr key={r.id} style={{ background: i%2===0?"rgba(255,255,255,0.02)":"transparent" }}>
-                    <td style={{ ...S.td, fontWeight: 700, color: "#f0f0f0" }}>{r.symbol}</td>
-                    <td style={{ ...S.td, color: "#aaa", fontSize: 11 }}>{r.description}</td>
-                    <td style={{ ...S.td, color: "#888", fontSize: 11 }}>{r.stratName}</td>
-                    <td style={{ ...S.td, color: "#888", fontSize: 11 }}>{r.account}</td>
-                    <td style={{ ...S.td, textAlign: "right", color: "#ccc" }}>${r.price.toFixed(2)}</td>
-                    <td style={{ ...S.td, textAlign: "right", fontWeight: 700, color: pnlColor(r.pnl) }}>{r.pnl >= 0 ? "+" : ""}{fmt$(r.pnl)}</td>
-                    <td style={{ ...S.td, textAlign: "right", color: r.pnlPct != null ? pnlColor(r.pnlPct) : "#888" }}>
-                      {r.pnlPct != null ? (r.pnlPct >= 0 ? "+" : "") + r.pnlPct.toFixed(1) + "%" : "—"}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div style={{ fontSize: 11, color: "#666", marginTop: 8 }}>
+            Note: Showing unrealized P&L without transaction history produces inaccurate numbers for short options strategies.
           </div>
         </div>
       )}
