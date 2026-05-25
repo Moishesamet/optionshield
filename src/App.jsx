@@ -2448,6 +2448,7 @@ function PnLTab({ positions = [], livePrice = {}, strategies = [], getStrategy, 
   const [loading, setLoading] = useState(false);
   const [loadMsg, setLoadMsg] = useState("");
   const [error, setError] = useState("");
+  const [transactions, setTransactions] = useState([]);
   const [groupBy, setGroupBy] = useState("symbol");
   const [filterAccount, setFilterAccount] = useState("All");
   const [filterStrategy, setFilterStrategy] = useState("All");
@@ -2456,6 +2457,42 @@ function PnLTab({ positions = [], livePrice = {}, strategies = [], getStrategy, 
   const [sortDir, setSortDir] = useState("desc");
   const [manualOverrides, setManualOverrides] = useState({});
   const [expandedKey, setExpandedKey] = useState(null);
+
+  const loadTransactions = async function() {
+    if (!schwabTokens || !schwabTokens.accessToken) { setError("Connect Schwab API in Import CSV tab first."); return; }
+    setLoading(true); setError(""); setLoadMsg("Fetching accounts...");
+    try {
+      const accResp = await fetch("https://api.schwabapi.com/trader/v1/accounts/accountNumbers", { headers: { "Authorization": "Bearer " + schwabTokens.accessToken } });
+      if (!accResp.ok) throw new Error("Account fetch failed: " + accResp.status);
+      const accounts = await accResp.json();
+      const to = new Date();
+      const from = new Date(); from.setFullYear(from.getFullYear() - 1);
+      const fromStr = from.toISOString().slice(0,10);
+      const toStr = to.toISOString().slice(0,10);
+      let allTx = []; let cnt = 0;
+      for (const acc of accounts) {
+        setLoadMsg("Fetching account " + (++cnt) + " of " + accounts.length + "...");
+        try {
+          const url = "https://api.schwabapi.com/trader/v1/accounts/" + acc.hashValue + "/transactions?startDate=" + fromStr + "T00:00:00.000Z&endDate=" + toStr + "T23:59:59.999Z";
+          const txResp = await fetch(url, { headers: { "Authorization": "Bearer " + schwabTokens.accessToken } });
+          if (!txResp.ok) { const t = await txResp.text(); console.warn("TX failed", txResp.status, t); continue; }
+          const txData = await txResp.json();
+          const txList = Array.isArray(txData) ? txData : [];
+          console.log("Account", acc.accountNumber, "tx:", txList.length);
+          txList.forEach(function(tx) {
+            (tx.transferItems || []).forEach(function(item) {
+              const inst = item.instrument || {};
+              allTx.push({ id: tx.activityId + "_" + Math.random(), date: (tx.tradeDate || "").slice(0,10), account: (accountNicknames || {})[acc.accountNumber] || acc.accountNumber, symbol: inst.underlyingSymbol || inst.symbol || "", type: tx.type || "", qty: parseFloat(item.amount) || 0, price: parseFloat(item.price) || 0, netAmount: parseFloat(tx.netAmount) || 0, fees: parseFloat(tx.fees || 0), isOption: inst.assetType === "OPTION" });
+            });
+          });
+        } catch(e) {}
+      }
+      setTransactions(allTx);
+      setLoadMsg("");
+      if (!allTx.length) setError("No transactions found. Check browser console for details.");
+    } catch(e) { setError("Error: " + e.message); setLoadMsg(""); }
+    setLoading(false);
+  };
 
   const inferStrategy = (sym) => {
     if (manualOverrides[sym]) return manualOverrides[sym];
@@ -2595,9 +2632,15 @@ function PnLTab({ positions = [], livePrice = {}, strategies = [], getStrategy, 
             <option value="Calls">Calls</option>
           </select>
         </div>
+        <div style={{ flex:1 }} />
+        <button onClick={loadTransactions} disabled={loading}
+          style={{ ...S.saveBtn, padding:"8px 16px", fontSize:12, opacity:loading?0.6:1, alignSelf:"flex-end" }}>
+          {loading ? loadMsg || "Loading..." : "📥 Load Realized from Schwab"}
+        </button>
       </div>
 
       {error && <div style={{ padding:"10px 14px", background:"rgba(255,77,109,0.08)", border:"1px solid rgba(255,77,109,0.2)", borderRadius:8, color:"#ff4d6d", fontSize:12, marginBottom:14 }}>{error}</div>}
+      {transactions.length > 0 && <div style={{ padding:"8px 14px", background:"rgba(6,214,160,0.08)", border:"1px solid rgba(6,214,160,0.2)", borderRadius:8, color:"#06d6a0", fontSize:12, marginBottom:14 }}>{"✓ " + transactions.length + " transactions loaded"}</div>}
 
       <div style={{ ...S.sectionHeader, marginBottom:10 }}>
         <span style={{ fontSize:13, fontWeight:700 }}>P&L by {groupBy.charAt(0).toUpperCase()+groupBy.slice(1)}</span>
@@ -4205,7 +4248,7 @@ The three indexes are managed independently with expirations laddered across the
                                 placeholder={watchlistIndustry || "Enter industry..."}
                                 style={{ ...S.input, padding: "3px 8px", fontSize: 11,
                                   color: (industryOverrides || {})[sym] ? "#ffd166" : "#aaa",
-                                  borderColor: (industryOverrides || {})[sym] ? "rgba(255,213,102,0.3)" : "rgba(255,255,255,0.08)"
+                                  borderColor: industryOverrides[sym] ? "rgba(255,213,102,0.3)" : "rgba(255,255,255,0.08)"
                                 }}
                               />
                             </td>
