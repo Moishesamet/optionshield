@@ -31,6 +31,16 @@ const SK = {
   txHistory: "opts:txHistory",
 };
 
+// localStorage wrapper — works identically to window.storage API
+const storage = {
+  get: (key) => Promise.resolve({ value: localStorage.getItem(key) }),
+  set: (key, value) => { try { localStorage.setItem(key, value); } catch(e) {} return Promise.resolve(true); },
+  delete: (key) => { localStorage.removeItem(key); return Promise.resolve(true); },
+  list: (prefix) => { const keys = Object.keys(localStorage).filter(k => !prefix || k.startsWith(prefix)); return Promise.resolve({ keys }); },
+};
+
+
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const fmt$ = (v) =>
   v == null ? "—" : new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(v);
@@ -593,19 +603,19 @@ export default function App() {
     (async () => {
       try {
         const [sp, ss, po, ind, dec, an, pr, eh, al, ar, te, sr, wd] = await Promise.all([
-          Promise.resolve({ value: localStorage.getItem(SK.strategies) }),
-          Promise.resolve({ value: localStorage.getItem(SK.symbolStrategy) }),
-          Promise.resolve({ value: localStorage.getItem(SK.positionOverride) }),
-          Promise.resolve({ value: localStorage.getItem(SK.industries) }),
-          Promise.resolve({ value: localStorage.getItem(SK.decisions) }),
-          Promise.resolve({ value: localStorage.getItem(SK.accountNicknames) }),
-          Promise.resolve({ value: localStorage.getItem(SK.prices) }),
-          Promise.resolve({ value: localStorage.getItem(SK.equityHoldings) }),
-          Promise.resolve({ value: localStorage.getItem(SK.alerts) }),
-          Promise.resolve({ value: localStorage.getItem(SK.alertRules) }),
-          Promise.resolve({ value: localStorage.getItem(SK.totalEquity) }),
-          Promise.resolve({ value: localStorage.getItem(SK.symbolRatings) }),
-          Promise.resolve({ value: localStorage.getItem(SK.watchlistData) }),
+          storage.get(SK.strategies).catch(() => null),
+          storage.get(SK.symbolStrategy).catch(() => null),
+          storage.get(SK.positionOverride).catch(() => null),
+          storage.get(SK.industries).catch(() => null),
+          storage.get(SK.decisions).catch(() => null),
+          storage.get(SK.accountNicknames).catch(() => null),
+          storage.get(SK.prices).catch(() => null),
+          storage.get(SK.equityHoldings).catch(() => null),
+          storage.get(SK.alerts).catch(() => null),
+          storage.get(SK.alertRules).catch(() => null),
+          storage.get(SK.totalEquity).catch(() => null),
+          storage.get(SK.symbolRatings).catch(() => null),
+          storage.get(SK.watchlistData).catch(() => null),
         ]);
         try { if (sp && sp.value) setStrategies(JSON.parse(sp.value) || DEFAULT_STRATEGIES); } catch(e) {}
         try { if (ss && ss.value) setSymbolStrategy(JSON.parse(ss.value) || {}); } catch(e) {}
@@ -620,43 +630,28 @@ export default function App() {
         try { if (sr && sr.value) setSymbolRatings(JSON.parse(sr.value) || {}); } catch(e) {}
         try { if (wd && wd.value) setWatchlistData(JSON.parse(wd.value) || {}); } catch(e) {}
         try {
-          const io = { value: localStorage.getItem("opts:industryOverrides") };
+          const io = await storage.get("opts:industryOverrides").catch(() => null);
           if (io && io.value) setIndustryOverrides(JSON.parse(io.value) || {});
         } catch(e) {}
         try {
-          const lb = { value: localStorage.getItem(SK.lastBackup) };
+          const lb = await storage.get(SK.lastBackup).catch(() => null);
           if (lb && lb.value) setLastBackup(JSON.parse(lb.value) || null);
         } catch(e) {}
         try {
-          const st = { value: localStorage.getItem(SK.schwabTokens) };
+          const st = await storage.get(SK.schwabTokens).catch(() => null);
           if (st && st.value) setSchwabTokens(JSON.parse(st.value) || null);
         } catch(e) {}
 
-        // Load and migrate decisions — strip old group prefix from IDs
+        // Load decisions with robust ID matching
         if (dec && dec.value) {
           const rawDecisions = JSON.parse(dec.value) || {};
-          const migrated = {};
-          Object.entries(rawDecisions).forEach(([id, val]) => {
-            const parts = id.split('_');
-            let startIdx = 0;
-            for (let i = 0; i < parts.length; i++) {
-              if (/^[A-Z]{1,6}$/.test(parts[i]) && parts[i].length <= 6) {
-                startIdx = i;
-                break;
-              }
-            }
-            const newId = parts.slice(startIdx).join('_');
-            migrated[newId] = val;
-          });
-          setDecisions(migrated);
-          // Save migrated IDs back so it only migrates once
-          const changed = JSON.stringify(migrated) !== JSON.stringify(rawDecisions);
-          if (changed) localStorage.setItem(SK.decisions, JSON.stringify(migrated));
+          setDecisions(rawDecisions);
+          // No migration needed anymore - IDs are now consistent
         }
 
-        const posData = { value: localStorage.getItem(SK.positions) };
+        const posData = await storage.get(SK.positions).catch(() => null);
         if (posData && posData.value) setPositions(JSON.parse(posData.value) || []);
-        const txData = { value: localStorage.getItem(SK.txHistory) };
+        const txData = await storage.get(SK.txHistory);
         if (txData && txData.value) setTxHistory(JSON.parse(txData.value) || []);
       } catch (e) { console.log("Storage load error", e); }
     })();
@@ -665,43 +660,43 @@ export default function App() {
   // ── Save helpers ──
   const saveStrategies = useCallback(async (s) => {
     setStrategies(s);
-    localStorage.setItem(SK.strategies, JSON.stringify(s));
+    await storage.set(SK.strategies, JSON.stringify(s)).catch(() => {});
   }, []);
 
   const saveSymbolStrategy = useCallback(async (s) => {
     setSymbolStrategy(s);
-    localStorage.setItem(SK.symbolStrategy, JSON.stringify(s));
+    await storage.set(SK.symbolStrategy, JSON.stringify(s)).catch(() => {});
   }, []);
 
   const savePosOverride = useCallback(async (s) => {
     setPosOverride(s);
-    localStorage.setItem(SK.positionOverride, JSON.stringify(s));
+    await storage.set(SK.positionOverride, JSON.stringify(s)).catch(() => {});
   }, []);
 
   const saveDecision = useCallback(async (posId, decision) => {
     const updated = { ...decisions, [posId]: decision };
     setDecisions(updated);
-    localStorage.setItem(SK.decisions, JSON.stringify(updated));
+    await storage.set(SK.decisions, JSON.stringify(updated)).catch(() => {});
   }, [decisions]);
 
   const saveSymbolRatings = useCallback(async (r) => {
     setSymbolRatings(r);
-    localStorage.setItem(SK.symbolRatings, JSON.stringify(r));
+    await storage.set(SK.symbolRatings, JSON.stringify(r)).catch(() => {});
   }, []);
 
   const saveAccountNicknames = useCallback(async (map) => {
     setAccountNicknames(map);
-    localStorage.setItem(SK.accountNicknames, JSON.stringify(map));
+    await storage.set(SK.accountNicknames, JSON.stringify(map)).catch(() => {});
   }, []);
 
   const saveAlerts = useCallback(async (a) => {
     setAlerts(a);
-    localStorage.setItem(SK.alerts, JSON.stringify(a));
+    await storage.set(SK.alerts, JSON.stringify(a)).catch(() => {});
   }, []);
 
   const saveAlertRules = useCallback(async (r) => {
     setAlertRules(r);
-    localStorage.setItem(SK.alertRules, JSON.stringify(r));
+    await storage.set(SK.alertRules, JSON.stringify(r)).catch(() => {});
   }, []);
 
   const dismissAlert = useCallback(async (id) => {
@@ -757,10 +752,10 @@ export default function App() {
         groupStrategies = result.groupStrategies;
         // Save equity holdings and total equity
         setEquityHoldings(result.equityHoldings || []);
-        localStorage.setItem(SK.equityHoldings, JSON.stringify(result.equityHoldings || []));
+        await storage.set(SK.equityHoldings, JSON.stringify(result.equityHoldings || [])).catch(() => {});
         if (result.totalEquity != null) {
           setTotalEquity(result.totalEquity);
-          localStorage.setItem(SK.totalEquity, JSON.stringify(result.totalEquity));
+          await storage.set(SK.totalEquity, JSON.stringify(result.totalEquity)).catch(() => {});
         }
       } else {
         const result = parseSchwabCSV(text);
@@ -801,13 +796,13 @@ export default function App() {
 
       // Replace positions completely — no merging, fresh file is source of truth
       setPositions(parsed);
-      localStorage.setItem(SK.positions, JSON.stringify(parsed));
+      await storage.set(SK.positions, JSON.stringify(parsed)).catch(() => {});
 
       // Always wipe stored prices completely before saving fresh ones
-      localStorage.setItem(SK.prices, JSON.stringify({}));
+      await storage.set(SK.prices, JSON.stringify({})).catch(() => {});
       const newPrices = { ...equityPrices };
       setLivePrice(newPrices);
-      localStorage.setItem(SK.prices, JSON.stringify(newPrices));
+      await storage.set(SK.prices, JSON.stringify(newPrices)).catch(() => {});
 
       // Fetch missing industry data
       const uniqueSymbols = [...new Set(parsed.map(p => p.symbol))];
@@ -828,7 +823,7 @@ export default function App() {
           await new Promise(r => setTimeout(r, 200));
         }
         setIndustry(newIndustry);
-        localStorage.setItem(SK.industries, JSON.stringify(newIndustry));
+        await storage.set(SK.industries, JSON.stringify(newIndustry)).catch(() => {});
       }
 
       const priceCount = Object.keys(equityPrices).length;
@@ -855,16 +850,16 @@ export default function App() {
     setAlerts([]);
     setAlertRules([]);
     await Promise.all([
-      Promise.resolve(localStorage.setItem(SK.positions, JSON.stringify([]))),
-      Promise.resolve(localStorage.setItem(SK.prices, JSON.stringify({}))),
-      Promise.resolve(localStorage.setItem(SK.industries, JSON.stringify({}))),
-      Promise.resolve(localStorage.setItem(SK.symbolStrategy, JSON.stringify({}))),
-      Promise.resolve(localStorage.setItem(SK.positionOverride, JSON.stringify({}))),
-      Promise.resolve(localStorage.setItem(SK.decisions, JSON.stringify({}))),
-      Promise.resolve(localStorage.setItem(SK.accountNicknames, JSON.stringify({}))),
-      Promise.resolve(localStorage.setItem(SK.strategies, JSON.stringify(DEFAULT_STRATEGIES))),
-      Promise.resolve(localStorage.setItem(SK.alerts, JSON.stringify([]))),
-      Promise.resolve(localStorage.setItem(SK.alertRules, JSON.stringify([]))),
+      storage.set(SK.positions, JSON.stringify([])).catch(() => {}),
+      storage.set(SK.prices, JSON.stringify({})).catch(() => {}),
+      storage.set(SK.industries, JSON.stringify({})).catch(() => {}),
+      storage.set(SK.symbolStrategy, JSON.stringify({})).catch(() => {}),
+      storage.set(SK.positionOverride, JSON.stringify({})).catch(() => {}),
+      storage.set(SK.decisions, JSON.stringify({})).catch(() => {}),
+      storage.set(SK.accountNicknames, JSON.stringify({})).catch(() => {}),
+      storage.set(SK.strategies, JSON.stringify(DEFAULT_STRATEGIES)).catch(() => {}),
+      storage.set(SK.alerts, JSON.stringify([])).catch(() => {}),
+      storage.set(SK.alertRules, JSON.stringify([])).catch(() => {}),
     ]);
     notify("Everything cleared including decisions, strategies and nicknames.", "success");
   }, []);
@@ -874,7 +869,7 @@ export default function App() {
     const data = {};
     for (const key of keys) {
       try {
-        const r = { value: localStorage.getItem(key) };
+        const r = await storage.get(key);
         if (r) data[key] = r.value;
       } catch(e) {}
     }
@@ -895,7 +890,7 @@ export default function App() {
       const text = await file.text();
       const data = JSON.parse(text);
       for (const [key, value] of Object.entries(data)) {
-        localStorage.setItem(key, value);
+        await storage.set(key, value).catch(() => {});
       }
       notify("✓ Data restored! Refreshing...", "success");
       setTimeout(() => window.location.reload(), 1500);
@@ -961,7 +956,7 @@ export default function App() {
       }
 
       setWatchlistData(data);
-      localStorage.setItem(SK.watchlistData, JSON.stringify(data));
+      await storage.set(SK.watchlistData, JSON.stringify(data)).catch(() => {});
       notify(`✓ Watchlist loaded — ${Object.keys(data).length} symbols.`, "success");
     } catch(e) {
       notify("Error reading watchlist: " + e.message, "error");
@@ -976,9 +971,9 @@ export default function App() {
     setLivePrice({});
     setIndustry({});
     await Promise.all([
-      Promise.resolve(localStorage.setItem(SK.positions, JSON.stringify([]))),
-      Promise.resolve(localStorage.setItem(SK.prices, JSON.stringify({}))),
-      Promise.resolve(localStorage.setItem(SK.industries, JSON.stringify({}))),
+      storage.set(SK.positions, JSON.stringify([])).catch(() => {}),
+      storage.set(SK.prices, JSON.stringify({})).catch(() => {}),
+      storage.set(SK.industries, JSON.stringify({})).catch(() => {}),
     ]);
     notify("Positions cleared. Decisions, strategies and nicknames kept.", "success");
   }, []);
@@ -1233,10 +1228,8 @@ export default function App() {
     const rules = alertRules.length > 0 ? alertRules : DEFAULT_RULES;
     const rule = rules.find(r => r.id === "rule_exposure_exclusions");
     const ids = new Set(rule?.excludedStrategyIds || []);
-    // Also exclude by name "index" as fallback if no IDs configured yet
-    if (ids.size === 0) {
-      (strategies || []).forEach(s => { if (s.name?.toLowerCase() === "index") ids.add(s.id); });
-    }
+    // Always exclude Index strategy by name
+    (strategies || []).forEach(s => { if (s.name && s.name.toLowerCase() === "index") ids.add(s.id); });
     return ids;
   }, [alertRules, strategies]);
 
@@ -1248,7 +1241,7 @@ export default function App() {
   const handleBackup = async () => {
     const ts = new Date().toISOString();
     setLastBackup(ts);
-    localStorage.setItem(SK.lastBackup, JSON.stringify(ts));
+    await storage.set(SK.lastBackup, JSON.stringify(ts)).catch(()=>{});
     notify("✓ Backup recorded!", "success");
   };
 
@@ -1337,7 +1330,23 @@ export default function App() {
         {tab === "backtester" && <BacktesterTab />}
         {tab === "builder" && <StrategyBuilderTab positions={positions} livePrice={livePrice} strategies={strategies} getStrategy={getStrategy} />}
         {tab === "strategies" && <StrategiesTab strategies={strategies} positions={positions} symbolStrategy={symbolStrategy} posOverride={posOverride} getStrategy={getStrategy} saveStrategies={saveStrategies} saveSymbolStrategy={saveSymbolStrategy} savePosOverride={savePosOverride} symbolRatings={symbolRatings} saveSymbolRatings={saveSymbolRatings} equityHoldings={equityHoldings} watchlistData={watchlistData} accountNicknames={accountNicknames} saveAccountNicknames={saveAccountNicknames} positions2={positions} />}
-        {tab === "import" && <ImportTab onUpload={(f, src) => handleCSV(f, src)} onClear={handleClearAll} onClearPositions={handleClearPositions} onExport={handleExport} onRestore={handleRestore} onWatchlist={handleWatchlistUpload} watchlistCount={Object.keys(watchlistData).length} posCount={positions.length} lastBackup={lastBackup} onBackup={handleBackup} schwabTokens={schwabTokens} onSchwabTokens={handleSchwabTokens} txHistoryCount={txHistory.length} onTxHistory={(trades) => { const merged = [...txHistory.filter(t => !trades.find(d => d.account === t.account && d.date === t.date && d.symbol === t.symbol && d.action === t.action)), ...trades]; setTxHistory(merged); localStorage.setItem(SK.txHistory, JSON.stringify(merged)); notify("✓ " + trades.length + " transactions added (" + merged.length + " total saved)", "success"); }} onSchwabImport={async (imported) => { setPositions(imported); localStorage.setItem(SK.positions, JSON.stringify(imported)); notify("✓ " + imported.length + " positions imported from Schwab!", "success"); }} />}
+        {tab === "import" && <ImportTab onUpload={(f, src) => handleCSV(f, src)} onClear={handleClearAll} onClearPositions={handleClearPositions} onExport={handleExport} onRestore={handleRestore} onWatchlist={handleWatchlistUpload} watchlistCount={Object.keys(watchlistData).length} posCount={positions.length} lastBackup={lastBackup} onBackup={handleBackup} schwabTokens={schwabTokens} onSchwabTokens={handleSchwabTokens} txHistoryCount={txHistory.length} onTxHistory={(trades) => { const merged = [...txHistory.filter(t => !trades.find(d => d.account === t.account && d.date === t.date && d.symbol === t.symbol && d.action === t.action)), ...trades]; setTxHistory(merged); localStorage.setItem(SK.txHistory, JSON.stringify(merged)); notify("✓ " + trades.length + " transactions added (" + merged.length + " total saved)", "success"); }} onSchwabImport={async (imported) => {
+          setPositions(imported);
+          localStorage.setItem(SK.positions, JSON.stringify(imported));
+          const stockPrices = imported._stockPrices || {};
+          const optionMarks = {};
+          imported.forEach(function(p) { if (p.symbol && p.mark) optionMarks[p.symbol] = p.mark; });
+          const newPrices = Object.assign({}, optionMarks, stockPrices);
+          if (Object.keys(newPrices).length > 0) {
+            setLivePrice(function(prev) { return Object.assign({}, prev || {}, newPrices); });
+            localStorage.setItem(SK.prices, JSON.stringify(Object.assign({}, JSON.parse(localStorage.getItem(SK.prices)||'{}'), newPrices)));
+          }
+          if (imported._totalEquity) {
+            setTotalEquity(imported._totalEquity);
+            localStorage.setItem(SK.totalEquity, JSON.stringify(imported._totalEquity));
+          }
+          notify("✓ " + imported.length + " positions imported from Schwab!", "success");
+        }} />}
       </main>
     </div>
   );
@@ -4148,14 +4157,14 @@ function StrategiesTab({ strategies, positions, symbolStrategy, posOverride, get
   const [industryOverrides, setIndustryOverrides] = useState({});
 
   useEffect(() => {
-    Promise.resolve({ value: localStorage.getItem("opts:industryOverrides") }).then(r => {
+    storage.get("opts:industryOverrides").then(r => {
       if (r && r.value) setIndustryOverrides(JSON.parse(r.value) || {});
     }).catch(() => {});
   }, []);
 
   const saveIndustryOverrides = async (map) => {
     setIndustryOverrides(map);
-    localStorage.setItem("opts:industryOverrides", JSON.stringify(map));
+    await storage.set("opts:industryOverrides", JSON.stringify(map)).catch(() => {});
   };
 
   const STRAT_DESCRIPTIONS = {
@@ -5222,6 +5231,7 @@ function ImportTab({ onUpload, onClear, onClearPositions, onExport, onRestore, o
 
       let allPositions = [];
       let accMap = {};
+      let totalEquityFromSchwab = 0;
       accounts.forEach(a => { accMap[a.hashValue] = a.accountNumber; });
 
       await Promise.all(accounts.map(async (acc) => {
@@ -5230,6 +5240,12 @@ function ImportTab({ onUpload, onClear, onClearPositions, onExport, onRestore, o
         });
         if (!posResp.ok) return;
         const posData = await posResp.json();
+        // Get account equity
+        const balances = posData && posData.securitiesAccount && posData.securitiesAccount.currentBalances;
+        if (balances) {
+          const equity = parseFloat(balances.liquidationValue || balances.equity || balances.accountValue || 0);
+          totalEquityFromSchwab += equity;
+        }
         const positions = (posData && posData.securitiesAccount && posData.securitiesAccount.positions) || [];
         console.log("Account", acc.accountNumber, "positions:", positions.length);
         if (positions.length > 0) console.log("Sample position:", JSON.stringify(positions[0]).slice(0, 300));
@@ -5254,7 +5270,7 @@ function ImportTab({ onUpload, onClear, onClearPositions, onExport, onRestore, o
           const isCall = parsed.type === 'CALL';
           const isShort = qty < 0;
 
-          const id = underlyingSymbol + '_' + parsed.strike + '_' + parsed.exp + '_' + parsed.type + '_' + acc.accountNumber;
+          const id = underlyingSymbol + '_' + parsed.exp + '_' + parsed.strike + '_' + parsed.type + '_' + Math.abs(qty);
 
           // Calculate P/L %
           let plPct = null;
@@ -5285,6 +5301,30 @@ function ImportTab({ onUpload, onClear, onClearPositions, onExport, onRestore, o
       }));
 
       if (allPositions.length === 0) throw new Error("No option positions found. Try uploading your TOS file instead.");
+
+      // Attach total equity
+      if (totalEquityFromSchwab > 0) allPositions._totalEquity = totalEquityFromSchwab;
+
+      // Fetch underlying stock prices
+      const symbols = [...new Set(allPositions.map(p => p.symbol))].join(',');
+      try {
+        const qResp = await fetch("https://api.schwabapi.com/marketdata/v1/quotes?symbols=" + symbols + "&fields=quote", {
+          headers: { "Authorization": "Bearer " + schwabTokens.accessToken }
+        });
+        if (qResp.ok) {
+          const qData = await qResp.json();
+          const stockPrices = {};
+          Object.entries(qData || {}).forEach(function([sym, data]) {
+            const price = (data.quote && (data.quote.lastPrice || data.quote.mark)) || null;
+            if (price) stockPrices[sym] = price;
+          });
+          if (Object.keys(stockPrices).length > 0) {
+            setSchwabStatus("Fetching prices... ✓");
+            // Pass stock prices along with positions
+            allPositions._stockPrices = stockPrices;
+          }
+        }
+      } catch(e) { console.warn("Price fetch failed:", e); }
 
       // Save positions
       await onSchwabImport(allPositions);
