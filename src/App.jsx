@@ -1334,12 +1334,10 @@ export default function App() {
           setPositions(imported);
           localStorage.setItem(SK.positions, JSON.stringify(imported));
           const stockPrices = imported._stockPrices || {};
-          const optionMarks = {};
-          imported.forEach(function(p) { if (p.symbol && p.mark) optionMarks[p.symbol] = p.mark; });
-          const newPrices = Object.assign({}, optionMarks, stockPrices);
-          if (Object.keys(newPrices).length > 0) {
-            setLivePrice(function(prev) { return Object.assign({}, prev || {}, newPrices); });
-            localStorage.setItem(SK.prices, JSON.stringify(Object.assign({}, JSON.parse(localStorage.getItem(SK.prices)||'{}'), newPrices)));
+          // Only update prices if we have real stock prices (not option marks)
+          if (Object.keys(stockPrices).length > 0) {
+            setLivePrice(function(prev) { return Object.assign({}, prev || {}, stockPrices); });
+            localStorage.setItem(SK.prices, JSON.stringify(Object.assign({}, JSON.parse(localStorage.getItem(SK.prices)||'{}'), stockPrices)));
           }
           if (imported._totalEquity) {
             setTotalEquity(imported._totalEquity);
