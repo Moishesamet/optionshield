@@ -5304,27 +5304,8 @@ function ImportTab({ onUpload, onClear, onClearPositions, onExport, onRestore, o
 
       // Attach total equity
       if (totalEquityFromSchwab > 0) allPositions._totalEquity = totalEquityFromSchwab;
-
-      // Fetch underlying stock prices
-      const symbols = [...new Set(allPositions.map(p => p.symbol))].join(',');
-      try {
-        const qResp = await fetch("https://api.schwabapi.com/marketdata/v1/quotes?symbols=" + symbols + "&fields=quote", {
-          headers: { "Authorization": "Bearer " + schwabTokens.accessToken }
-        });
-        if (qResp.ok) {
-          const qData = await qResp.json();
-          const stockPrices = {};
-          Object.entries(qData || {}).forEach(function([sym, data]) {
-            const price = (data.quote && (data.quote.lastPrice || data.quote.mark)) || null;
-            if (price) stockPrices[sym] = price;
-          });
-          if (Object.keys(stockPrices).length > 0) {
-            setSchwabStatus("Fetching prices... ✓");
-            // Pass stock prices along with positions
-            allPositions._stockPrices = stockPrices;
-          }
-        }
-      } catch(e) { console.warn("Price fetch failed:", e); }
+      // Note: Schwab market data API blocked by CORS in browser — prices come from TOS upload
+      allPositions._stockPrices = {};
 
       // Save positions
       await onSchwabImport(allPositions);
