@@ -1333,17 +1333,26 @@ export default function App() {
         {tab === "import" && <ImportTab onUpload={(f, src) => handleCSV(f, src)} onClear={handleClearAll} onClearPositions={handleClearPositions} onExport={handleExport} onRestore={handleRestore} onWatchlist={handleWatchlistUpload} watchlistCount={Object.keys(watchlistData).length} posCount={positions.length} lastBackup={lastBackup} onBackup={handleBackup} schwabTokens={schwabTokens} onSchwabTokens={handleSchwabTokens} txHistoryCount={txHistory.length} onTxHistory={(trades) => { const merged = [...txHistory.filter(t => !trades.find(d => d.account === t.account && d.date === t.date && d.symbol === t.symbol && d.action === t.action)), ...trades]; setTxHistory(merged); localStorage.setItem(SK.txHistory, JSON.stringify(merged)); notify("✓ " + trades.length + " transactions added (" + merged.length + " total saved)", "success"); }} onSchwabImport={async (imported) => {
           setPositions(imported);
           localStorage.setItem(SK.positions, JSON.stringify(imported));
-          const stockPrices = imported._stockPrices || {};
-          // Only update prices if we have real stock prices (not option marks)
-          if (Object.keys(stockPrices).length > 0) {
-            setLivePrice(function(prev) { return Object.assign({}, prev || {}, stockPrices); });
-            localStorage.setItem(SK.prices, JSON.stringify(Object.assign({}, JSON.parse(localStorage.getItem(SK.prices)||'{}'), stockPrices)));
-          }
           if (imported._totalEquity) {
             setTotalEquity(imported._totalEquity);
             localStorage.setItem(SK.totalEquity, JSON.stringify(imported._totalEquity));
           }
-          notify("✓ " + imported.length + " positions imported from Schwab!", "success");
+          // Fetch stock prices from Yahoo Finance for all symbols
+          const symbols = [...new Set(imported.map(function(p) { return p.symbol; }))];
+          const existingPrices = JSON.parse(localStorage.getItem(SK.prices) || '{}');
+          const newPrices = Object.assign({}, existingPrices);
+          let fetched = 0;
+          for (let i = 0; i < symbols.length; i += 5) {
+            const batch = symbols.slice(i, i + 5);
+            await Promise.all(batch.map(async function(sym) {
+              const q = await fetchYahooQuote(sym);
+              if (q && q.price) { newPrices[sym] = q.price; fetched++; }
+            }));
+            await new Promise(function(r) { setTimeout(r, 150); });
+          }
+          setLivePrice(newPrices);
+          localStorage.setItem(SK.prices, JSON.stringify(newPrices));
+          notify("✓ " + imported.length + " positions imported. Prices updated for " + fetched + " symbols.", "success");
         }} />}
       </main>
     </div>
